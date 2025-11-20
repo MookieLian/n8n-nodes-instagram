@@ -6,12 +6,12 @@
 	"resources": {
 		"credentialDocumentation": [
 			{
-				"url": "https://github.com/org/repo?tab=readme-ov-file#credentials"
+				"url": "https://docs.n8n.io/integrations/builtin/credentials/facebookgraph/"
 			}
 		],
 		"primaryDocumentation": [
 			{
-				"url": "https://github.com/org/repo?tab=readme-ov-file"
+				"url": "https://developers.facebook.com/docs/instagram-api/guides/content-publishing"
 			}
 		]
 	}
