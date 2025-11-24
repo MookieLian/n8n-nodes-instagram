@@ -5,6 +5,7 @@ const sleep = (ms) => new Promise((resolve) => {
     globalThis.setTimeout(() => resolve(), ms);
 });
 const n8n_workflow_1 = require("n8n-workflow");
+const resources_1 = require("./resources");
 const READY_STATUSES = new Set(['FINISHED', 'PUBLISHED', 'READY']);
 const ERROR_STATUSES = new Set(['ERROR', 'FAILED']);
 class Instagram {
@@ -39,16 +40,7 @@ class Instagram {
                     displayName: 'Resource',
                     name: 'resource',
                     type: 'options',
-                    options: [
-                        {
-                            name: 'Image',
-                            value: 'image',
-                        },
-                        {
-                            name: 'Reels',
-                            value: 'reels',
-                        },
-                    ],
+                    options: resources_1.instagramResourceOptions,
                     default: 'image',
                     description: 'Select the Instagram media type to publish.',
                     required: true,
@@ -62,32 +54,7 @@ class Instagram {
                     placeholder: 'me',
                     required: true,
                 },
-                {
-                    displayName: 'Image URL',
-                    name: 'imageUrl',
-                    type: 'string',
-                    default: '',
-                    description: 'The URL of the image to publish on Instagram',
-                    required: true,
-                    displayOptions: {
-                        show: {
-                            resource: ['image'],
-                        },
-                    },
-                },
-                {
-                    displayName: 'Video URL',
-                    name: 'videoUrl',
-                    type: 'string',
-                    default: '',
-                    description: 'The URL of the video to publish as a reel on Instagram',
-                    required: true,
-                    displayOptions: {
-                        show: {
-                            resource: ['reels'],
-                        },
-                    },
-                },
+                ...resources_1.instagramResourceFields,
                 {
                     displayName: 'Caption',
                     name: 'caption',
@@ -103,9 +70,7 @@ class Instagram {
         var _a, _b, _c, _d, _e, _f;
         const items = this.getInputData();
         const returnItems = [];
-        const waitForContainerReady = async ({ resource, creationId, hostUrl, graphApiVersion, accessToken, itemIndex, }) => {
-            const pollIntervalMs = resource === 'reels' ? 3000 : 1500;
-            const maxPollAttempts = resource === 'reels' ? 80 : 20;
+        const waitForContainerReady = async ({ creationId, hostUrl, graphApiVersion, accessToken, itemIndex, pollIntervalMs, maxPollAttempts, }) => {
             const statusUri = `https://${hostUrl}/${graphApiVersion}/${creationId}`;
             const statusFields = ['status_code', 'status'];
             const pollRequestOptions = {
@@ -159,25 +124,24 @@ class Instagram {
             try {
                 const graphApiCredentials = await this.getCredentials('facebookGraphApi');
                 const resource = this.getNodeParameter('resource', itemIndex);
+                const handler = resources_1.instagramResourceHandlers[resource];
+                if (!handler) {
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Unsupported resource: ${resource}`, {
+                        itemIndex,
+                    });
+                }
                 const node = this.getNodeParameter('node', itemIndex);
                 const caption = this.getNodeParameter('caption', itemIndex);
                 const hostUrl = 'graph.facebook.com';
                 const graphApiVersion = 'v22.0';
                 const httpRequestMethod = 'POST';
                 const mediaUri = `https://${hostUrl}/${graphApiVersion}/${node}/media`;
+                const mediaPayload = handler.buildMediaPayload.call(this, itemIndex);
                 const mediaQs = {
                     access_token: graphApiCredentials.accessToken,
                     caption,
+                    ...mediaPayload,
                 };
-                if (resource === 'image') {
-                    const imageUrl = this.getNodeParameter('imageUrl', itemIndex);
-                    mediaQs.image_url = imageUrl;
-                }
-                else if (resource === 'reels') {
-                    const videoUrl = this.getNodeParameter('videoUrl', itemIndex);
-                    mediaQs.video_url = videoUrl;
-                    mediaQs.media_type = 'REELS';
-                }
                 const mediaRequestOptions = {
                     headers: {
                         accept: 'application/json,text/*;q=0.99',
@@ -229,12 +193,13 @@ class Instagram {
                     continue;
                 }
                 await waitForContainerReady({
-                    resource,
                     creationId,
                     hostUrl,
                     graphApiVersion,
                     accessToken: graphApiCredentials.accessToken,
                     itemIndex,
+                    pollIntervalMs: handler.pollIntervalMs,
+                    maxPollAttempts: handler.maxPollAttempts,
                 });
                 const publishUri = `https://${hostUrl}/${graphApiVersion}/${node}/media_publish`;
                 const publishQs = {
@@ -251,8 +216,8 @@ class Instagram {
                     json: true,
                     gzip: true,
                 };
-                const publishRetryDelay = resource === 'reels' ? 3000 : 1500;
-                const publishMaxAttempts = resource === 'reels' ? 6 : 3;
+                const publishRetryDelay = handler.publishRetryDelay;
+                const publishMaxAttempts = handler.publishMaxAttempts;
                 let publishResponse;
                 let publishSucceeded = false;
                 let publishFailedWithError = false;

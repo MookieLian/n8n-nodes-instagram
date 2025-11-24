@@ -15,8 +15,12 @@ const sleep = (ms: number) =>
 		);
 	});
 import { NodeApiError, NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
-
-type ResourceType = 'image' | 'reels';
+import {
+	instagramResourceFields,
+	instagramResourceHandlers,
+	instagramResourceOptions,
+} from './resources';
+import type { InstagramResourceType } from './resources/types';
 
 const READY_STATUSES = new Set(['FINISHED', 'PUBLISHED', 'READY']);
 const ERROR_STATUSES = new Set(['ERROR', 'FAILED']);
@@ -52,16 +56,7 @@ export class Instagram implements INodeType {
 				displayName: 'Resource',
 				name: 'resource',
 				type: 'options',
-				options: [
-					{
-						name: 'Image',
-						value: 'image',
-					},
-					{
-						name: 'Reels',
-						value: 'reels',
-					},
-				],
+				options: instagramResourceOptions,
 				default: 'image',
 				description: 'Select the Instagram media type to publish.',
 				required: true,
@@ -76,32 +71,7 @@ export class Instagram implements INodeType {
 				placeholder: 'me',
 				required: true,
 			},
-			{
-				displayName: 'Image URL',
-				name: 'imageUrl',
-				type: 'string',
-				default: '',
-				description: 'The URL of the image to publish on Instagram',
-				required: true,
-				displayOptions: {
-					show: {
-						resource: ['image'],
-					},
-				},
-			},
-			{
-				displayName: 'Video URL',
-				name: 'videoUrl',
-				type: 'string',
-				default: '',
-				description: 'The URL of the video to publish as a reel on Instagram',
-				required: true,
-				displayOptions: {
-					show: {
-						resource: ['reels'],
-					},
-				},
-			},
+			...instagramResourceFields,
 			{
 				displayName: 'Caption',
 				name: 'caption',
@@ -118,22 +88,22 @@ export class Instagram implements INodeType {
 		const returnItems: INodeExecutionData[] = [];
 
 		const waitForContainerReady = async ({
-			resource,
 			creationId,
 			hostUrl,
 			graphApiVersion,
 			accessToken,
 			itemIndex,
+			pollIntervalMs,
+			maxPollAttempts,
 		}: {
-			resource: ResourceType;
 			creationId: string;
 			hostUrl: string;
 			graphApiVersion: string;
 			accessToken: string;
 			itemIndex: number;
+			pollIntervalMs: number;
+			maxPollAttempts: number;
 		}) => {
-			const pollIntervalMs = resource === 'reels' ? 3000 : 1500;
-			const maxPollAttempts = resource === 'reels' ? 80 : 20;
 			const statusUri = `https://${hostUrl}/${graphApiVersion}/${creationId}`;
 			const statusFields = ['status_code', 'status'];
 
@@ -204,7 +174,13 @@ export class Instagram implements INodeType {
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			try {
 				const graphApiCredentials = await this.getCredentials('facebookGraphApi');
-				const resource = this.getNodeParameter('resource', itemIndex) as ResourceType;
+				const resource = this.getNodeParameter('resource', itemIndex) as InstagramResourceType;
+				const handler = instagramResourceHandlers[resource];
+				if (!handler) {
+					throw new NodeOperationError(this.getNode(), `Unsupported resource: ${resource}`, {
+						itemIndex,
+					});
+				}
 				const node = this.getNodeParameter('node', itemIndex) as string;
 				const caption = this.getNodeParameter('caption', itemIndex) as string;
 
@@ -215,19 +191,12 @@ export class Instagram implements INodeType {
 
 				// First request: Create media container
 				const mediaUri = `https://${hostUrl}/${graphApiVersion}/${node}/media`;
+				const mediaPayload = handler.buildMediaPayload.call(this, itemIndex);
 				const mediaQs: IDataObject = {
 					access_token: graphApiCredentials.accessToken,
 					caption,
+					...mediaPayload,
 				};
-
-				if (resource === 'image') {
-					const imageUrl = this.getNodeParameter('imageUrl', itemIndex) as string;
-					mediaQs.image_url = imageUrl;
-				} else if (resource === 'reels') {
-					const videoUrl = this.getNodeParameter('videoUrl', itemIndex) as string;
-					mediaQs.video_url = videoUrl;
-					mediaQs.media_type = 'REELS';
-				}
 
 				const mediaRequestOptions: IRequestOptions = {
 					headers: {
@@ -289,12 +258,13 @@ export class Instagram implements INodeType {
 
 				// Wait until the container is ready before publishing
 				await waitForContainerReady({
-					resource,
 					creationId,
 					hostUrl,
 					graphApiVersion,
 					accessToken: graphApiCredentials.accessToken as string,
 					itemIndex,
+					pollIntervalMs: handler.pollIntervalMs,
+					maxPollAttempts: handler.maxPollAttempts,
 				});
 
 				// Second request: Publish media
@@ -315,8 +285,8 @@ export class Instagram implements INodeType {
 					gzip: true,
 				};
 
-				const publishRetryDelay = resource === 'reels' ? 3000 : 1500;
-				const publishMaxAttempts = resource === 'reels' ? 6 : 3;
+				const publishRetryDelay = handler.publishRetryDelay;
+				const publishMaxAttempts = handler.publishMaxAttempts;
 				let publishResponse: any;
 				let publishSucceeded = false;
 				let publishFailedWithError = false;
