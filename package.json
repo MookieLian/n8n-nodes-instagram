@@ -35,8 +35,5 @@
     "release-it": "^19.0.4",
     "typescript": "5.9.2"
   },
-  "peerDependencies": { "n8n-workflow": "*" },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
-  }
+  "peerDependencies": { "n8n-workflow": "*" }
 }
