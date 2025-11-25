@@ -8,7 +8,7 @@
     "author": { "name": "MookieLian", "email": "mookielianhd@gmail.com" },
     "repository": {
         "type": "git",
-        "url": "https://github.com/MookieLian/n8n-nodes-instagram"
+        "url": "https://github.com/MookieLian/n8n-nodes-instagram.git"
     },
     "scripts": {
         "build": "n8n-node build",
@@ -35,5 +35,8 @@
         "release-it": "^19.0.4",
         "typescript": "5.9.2"
     },
-    "peerDependencies": { "n8n-workflow": "*" }
+    "peerDependencies": { "n8n-workflow": "*" },
+    "publishConfig": {
+        "registry": "https://npm.pkg.github.com"
+    }
 }
