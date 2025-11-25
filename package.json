@@ -8,7 +8,7 @@
   "author": { "name": "MookieLian", "email": "mookielianhd@gmail.com" },
   "repository": {
     "type": "git",
-    "url": "https://github.com/MookieLian/n8n-nodes-instagram.git"
+    "url": "https://github.com/MookieLian/n8n-nodes-instagram"
   },
   "scripts": {
     "build": "n8n-node build",
