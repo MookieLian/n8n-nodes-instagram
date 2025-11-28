@@ -1,4 +1,4 @@
-# @mookie/n8n-nodes-instagram
+# @mookielianhd/n8n-nodes-instagram
 
 This package adds an Instagram Publishing node to n8n so you can send media to your Instagram Business accounts without leaving your workflow.
 
