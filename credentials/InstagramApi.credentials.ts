@@ -3,7 +3,7 @@ import type {
 	ICredentialTestRequest,
 	ICredentialType,
 	INodeProperties,
-	Icon
+	Icon,
 } from 'n8n-workflow';
 
 export class InstagramApi implements ICredentialType {

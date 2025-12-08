@@ -178,9 +178,9 @@ export class Instagram implements INodeType {
 			const errorWithGraph = error as ErrorWithGraph;
 			const graphError = errorWithGraph?.response?.body?.error;
 			if (!graphError) return false;
-			const message = (graphError.message as string | undefined)?.toLowerCase() ?? '';
-			const code = graphError.code as number | undefined;
-			const subcode = graphError.error_subcode as number | undefined;
+			const message = graphError.message?.toLowerCase() ?? '';
+			const code = graphError.code;
+			const subcode = graphError.error_subcode;
 			return (
 				message.includes('not ready') ||
 				message.includes('not finished') ||
@@ -222,7 +222,7 @@ export class Instagram implements INodeType {
 					method: httpRequestMethod,
 					url: mediaUri,
 					qs: mediaQs,
-				json: true,
+					json: true,
 				};
 
 				let mediaResponse: IDataObject;
@@ -260,7 +260,7 @@ export class Instagram implements INodeType {
 					} else {
 						errorItem = err;
 					}
-					returnItems.push({ json: errorItem as IDataObject });
+					returnItems.push({ json: errorItem as IDataObject, pairedItem: { item: itemIndex } });
 					continue;
 				}
 
@@ -270,7 +270,7 @@ export class Instagram implements INodeType {
 							itemIndex,
 						});
 					}
-					returnItems.push({ json: { message: mediaResponse } });
+					returnItems.push({ json: { message: mediaResponse }, pairedItem: { item: itemIndex } });
 					continue;
 				}
 
@@ -284,7 +284,7 @@ export class Instagram implements INodeType {
 							{ itemIndex },
 						);
 					}
-					returnItems.push({ json: { error: 'No creation_id in response', response: mediaResponse } });
+					returnItems.push({ json: { error: 'No creation_id in response', response: mediaResponse }, pairedItem: { item: itemIndex } });
 					continue;
 				}
 
@@ -311,12 +311,12 @@ export class Instagram implements INodeType {
 					method: httpRequestMethod,
 					url: publishUri,
 					qs: publishQs,
-				json: true,
+					json: true,
 				};
 
 				const publishRetryDelay = handler.publishRetryDelay;
 				const publishMaxAttempts = handler.publishMaxAttempts;
-				let publishResponse: IDataObject;
+				let publishResponse: IDataObject | undefined;
 				let publishSucceeded = false;
 				let publishFailedWithError = false;
 
@@ -362,16 +362,17 @@ export class Instagram implements INodeType {
 						} else {
 							errorItem = { ...(error as object), creation_id: creationId, note: 'Media was created but publishing failed' };
 						}
-						returnItems.push({ json: { ...errorItem } });
+						returnItems.push({ json: { ...errorItem }, pairedItem: { item: itemIndex } });
 						publishFailedWithError = true;
 						break;
 					}
+				}
 
 				if (publishFailedWithError) {
 					continue;
 				}
 
-				if (!publishSucceeded) {
+				if (!publishSucceeded || publishResponse === undefined) {
 					throw new NodeOperationError(
 						this.getNode(),
 						`Failed to publish media after ${publishMaxAttempts} attempts due to container not being ready.`,
@@ -385,14 +386,13 @@ export class Instagram implements INodeType {
 							itemIndex,
 						});
 					}
-					returnItems.push({ json: { message: publishResponse } });
+					returnItems.push({ json: { message: publishResponse }, pairedItem: { item: itemIndex } });
 					continue;
 				}
 
 				// Return the publish response
-				returnItems.push({ json: publishResponse });
-			}
-		} catch (error) {
+				returnItems.push({ json: publishResponse, pairedItem: { item: itemIndex } });
+			} catch (error) {
 				if (!this.continueOnFail()) {
 					throw new NodeApiError(this.getNode(), error as JsonObject);
 				}
@@ -421,9 +421,9 @@ export class Instagram implements INodeType {
 						headers: errorWithGraph.response.headers,
 					};
 				} else {
-					errorItem = error;
+					errorItem = error as IDataObject;
 				}
-				returnItems.push({ json: { ...errorItem } });
+				returnItems.push({ json: { ...errorItem }, pairedItem: { item: itemIndex } });
 			}
 		}
 

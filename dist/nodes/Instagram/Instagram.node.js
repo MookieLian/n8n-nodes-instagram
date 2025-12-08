@@ -183,7 +183,7 @@ class Instagram {
                     else {
                         errorItem = err;
                     }
-                    returnItems.push({ json: errorItem });
+                    returnItems.push({ json: errorItem, pairedItem: { item: itemIndex } });
                     continue;
                 }
                 if (typeof mediaResponse === 'string') {
@@ -192,7 +192,7 @@ class Instagram {
                             itemIndex,
                         });
                     }
-                    returnItems.push({ json: { message: mediaResponse } });
+                    returnItems.push({ json: { message: mediaResponse }, pairedItem: { item: itemIndex } });
                     continue;
                 }
                 const creationId = mediaResponse.id;
@@ -200,7 +200,7 @@ class Instagram {
                     if (!this.continueOnFail()) {
                         throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Media creation response did not contain an id (creation_id).', { itemIndex });
                     }
-                    returnItems.push({ json: { error: 'No creation_id in response', response: mediaResponse } });
+                    returnItems.push({ json: { error: 'No creation_id in response', response: mediaResponse }, pairedItem: { item: itemIndex } });
                     continue;
                 }
                 await waitForContainerReady({
@@ -258,27 +258,27 @@ class Instagram {
                         else {
                             errorItem = { ...error, creation_id: creationId, note: 'Media was created but publishing failed' };
                         }
-                        returnItems.push({ json: { ...errorItem } });
+                        returnItems.push({ json: { ...errorItem }, pairedItem: { item: itemIndex } });
                         publishFailedWithError = true;
                         break;
                     }
-                    if (publishFailedWithError) {
-                        continue;
-                    }
-                    if (!publishSucceeded) {
-                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to publish media after ${publishMaxAttempts} attempts due to container not being ready.`, { itemIndex });
-                    }
-                    if (typeof publishResponse === 'string') {
-                        if (!this.continueOnFail()) {
-                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Media publish response body is not valid JSON.', {
-                                itemIndex,
-                            });
-                        }
-                        returnItems.push({ json: { message: publishResponse } });
-                        continue;
-                    }
-                    returnItems.push({ json: publishResponse });
                 }
+                if (publishFailedWithError) {
+                    continue;
+                }
+                if (!publishSucceeded || publishResponse === undefined) {
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to publish media after ${publishMaxAttempts} attempts due to container not being ready.`, { itemIndex });
+                }
+                if (typeof publishResponse === 'string') {
+                    if (!this.continueOnFail()) {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Media publish response body is not valid JSON.', {
+                            itemIndex,
+                        });
+                    }
+                    returnItems.push({ json: { message: publishResponse }, pairedItem: { item: itemIndex } });
+                    continue;
+                }
+                returnItems.push({ json: publishResponse, pairedItem: { item: itemIndex } });
             }
             catch (error) {
                 if (!this.continueOnFail()) {
@@ -297,7 +297,7 @@ class Instagram {
                 else {
                     errorItem = error;
                 }
-                returnItems.push({ json: { ...errorItem } });
+                returnItems.push({ json: { ...errorItem }, pairedItem: { item: itemIndex } });
             }
         }
         return [returnItems];
