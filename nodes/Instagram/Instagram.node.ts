@@ -51,7 +51,7 @@ export class Instagram implements INodeType {
 				type: 'options',
 				noDataExpression: true,
 				options: [...instagramResourceOptions],
-				default: '',
+				default: 'image',
 				description: 'Select the Instagram media type to publish',
 				required: true,
 			},
@@ -70,7 +70,7 @@ export class Instagram implements INodeType {
 						name: 'Publish',
 						value: 'publish',
 						action: 'Publish',
-						description: 'Publish media to Instagram',
+						description: 'Publish the selected media type (image, reel, or story) to Instagram',
 					},
 				],
 				default: 'publish',
@@ -120,6 +120,144 @@ export class Instagram implements INodeType {
 						operation: ['publish'],
 					},
 				},
+			},
+			{
+				displayName: 'Additional Fields',
+				name: 'additionalFields',
+				type: 'collection',
+				placeholder: 'Add Field',
+				default: {},
+				displayOptions: {
+					show: {
+						resource: ['image', 'reels', 'stories'],
+						operation: ['publish'],
+					},
+				},
+				options: [
+					{
+						displayName: 'Alt Text',
+						name: 'altText',
+						type: 'string',
+						default: '',
+						description: 'Alternative text for image posts (for accessibility). Image only; not supported for Reels or Stories.',
+					},
+					{
+						displayName: 'Location ID',
+						name: 'locationId',
+						type: 'string',
+						default: '',
+						description:
+							'Facebook Page ID for a location to tag. Use Pages Search API to find location pages. Image and Reels only; not supported for Stories.',
+					},
+					{
+						displayName: 'User Tags',
+						name: 'userTags',
+						type: 'fixedCollection',
+						typeOptions: {
+							multipleValues: true,
+						},
+						placeholder: 'Add User Tag',
+						default: {},
+						description:
+							'Users to tag in the media. username required; x and y coordinates (0–1) required for images, optional for stories. Supported for Image, Reels, and Stories.',
+						options: [
+							{
+								displayName: 'Tag',
+								name: 'tag',
+								values: [
+									{
+										displayName: 'Username',
+										name: 'username',
+										type: 'string',
+										default: '',
+										description: 'Instagram username to tag (without @)',
+										required: true,
+									},
+									{
+										displayName: 'X Position',
+										name: 'x',
+										type: 'number',
+										typeOptions: {
+											minValue: 0,
+											maxValue: 1,
+											numberStepSize: 0.01,
+										},
+										default: 0.5,
+										description:
+											'Horizontal position (0–1). Required for images, optional for stories. 0 = left edge, 1 = right edge',
+									},
+									{
+										displayName: 'Y Position',
+										name: 'y',
+										type: 'number',
+										typeOptions: {
+											minValue: 0,
+											maxValue: 1,
+											numberStepSize: 0.01,
+										},
+										default: 0.5,
+										description:
+											'Vertical position (0–1). Required for images, optional for stories. 0 = top edge, 1 = bottom edge',
+									},
+								],
+							},
+						],
+					},
+					{
+						displayName: 'Product Tags',
+						name: 'productTags',
+						type: 'fixedCollection',
+						typeOptions: {
+							multipleValues: true,
+						},
+						placeholder: 'Add Product Tag',
+						default: {},
+						description:
+							'Products to tag in the media. product_id required; x and y coordinates (0–1) optional. Image and Reels only; not supported for Stories. Max 5 tags.',
+						options: [
+							{
+								displayName: 'Tag',
+								name: 'tag',
+								values: [
+									{
+										displayName: 'Product ID',
+										name: 'product_id',
+										type: 'string',
+										default: '',
+										description: 'Product ID from your catalog',
+										required: true,
+									},
+									{
+										displayName: 'X Position',
+										name: 'x',
+										type: 'number',
+										typeOptions: {
+											minValue: 0,
+											maxValue: 1,
+											numberStepSize: 0.01,
+										},
+										default: 0.5,
+										description:
+											'Horizontal position (0–1). Optional. 0 = left edge, 1 = right edge',
+									},
+									{
+										displayName: 'Y Position',
+										name: 'y',
+										type: 'number',
+										typeOptions: {
+											minValue: 0,
+											maxValue: 1,
+											numberStepSize: 0.01,
+										},
+										default: 0.5,
+										description:
+											'Vertical position (0–1). Optional. 0 = top edge, 1 = bottom edge',
+									},
+								],
+							},
+						],
+					},
+				],
 			},
 		],
 	};
@@ -245,6 +383,15 @@ export class Instagram implements INodeType {
 				const node = this.getNodeParameter('node', itemIndex) as string;
 				const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
 				const caption = this.getNodeParameter('caption', itemIndex) as string;
+				const additionalFields = this.getNodeParameter('additionalFields', itemIndex, {}) as IDataObject;
+				const altText = (additionalFields.altText as string) ?? '';
+				const rawLocationId = additionalFields.locationId as string | undefined;
+				const userTagsCollection = additionalFields.userTags as
+					| { tag?: Array<{ username: string; x?: number; y?: number }> }
+					| undefined;
+				const productTagsCollection = additionalFields.productTags as
+					| { tag?: Array<{ product_id: string; x?: number; y?: number }> }
+					| undefined;
 
 				// Graph host remains static; version is configurable by the user
 				const hostUrl = 'graph.facebook.com';
@@ -257,6 +404,56 @@ export class Instagram implements INodeType {
 					caption,
 					...mediaPayload,
 				};
+
+				if (altText) {
+					mediaQs.alt_text = altText;
+				}
+				const locationId = rawLocationId?.trim();
+				if (locationId) {
+					mediaQs.location_id = locationId;
+				}
+				if (userTagsCollection?.tag && Array.isArray(userTagsCollection.tag) && userTagsCollection.tag.length > 0) {
+					const userTags = userTagsCollection.tag
+						.filter((tag) => tag.username)
+						.map((tag) => {
+							const tagObj: IDataObject = {
+								username: tag.username,
+							};
+							if (tag.x !== undefined && tag.x !== null) {
+								tagObj.x = tag.x;
+							}
+							if (tag.y !== undefined && tag.y !== null) {
+								tagObj.y = tag.y;
+							}
+							return tagObj;
+						});
+					if (userTags.length > 0) {
+						mediaQs.user_tags = JSON.stringify(userTags);
+					}
+				}
+				if (
+					productTagsCollection?.tag &&
+					Array.isArray(productTagsCollection.tag) &&
+					productTagsCollection.tag.length > 0
+				) {
+					const productTags = productTagsCollection.tag
+						.filter((tag) => tag.product_id)
+						.map((tag) => {
+							const tagObj: IDataObject = {
+								product_id: tag.product_id,
+							};
+							if (tag.x !== undefined && tag.x !== null) {
+								tagObj.x = tag.x;
+							}
+							if (tag.y !== undefined && tag.y !== null) {
+								tagObj.y = tag.y;
+							}
+							return tagObj;
+						});
+					if (productTags.length > 0) {
+						mediaQs.product_tags = JSON.stringify(productTags);
+					}
+				}
 
 				const mediaRequestOptions: IHttpRequestOptions = {
 					headers: {

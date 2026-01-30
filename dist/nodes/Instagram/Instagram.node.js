@@ -39,7 +39,7 @@ class Instagram {
                     type: 'options',
                     noDataExpression: true,
                     options: [...resources_1.instagramResourceOptions],
-                    default: '',
+                    default: 'image',
                     description: 'Select the Instagram media type to publish',
                     required: true,
                 },
@@ -58,7 +58,7 @@ class Instagram {
                             name: 'Publish',
                             value: 'publish',
                             action: 'Publish',
-                            description: 'Publish media to Instagram',
+                            description: 'Publish the selected media type (image, reel, or story) to Instagram',
                         },
                     ],
                     default: 'publish',
@@ -108,11 +108,142 @@ class Instagram {
                         },
                     },
                 },
+                {
+                    displayName: 'Additional Fields',
+                    name: 'additionalFields',
+                    type: 'collection',
+                    placeholder: 'Add Field',
+                    default: {},
+                    displayOptions: {
+                        show: {
+                            resource: ['image', 'reels', 'stories'],
+                            operation: ['publish'],
+                        },
+                    },
+                    options: [
+                        {
+                            displayName: 'Alt Text',
+                            name: 'altText',
+                            type: 'string',
+                            default: '',
+                            description: 'Alternative text for image posts (for accessibility). Image only; not supported for Reels or Stories.',
+                        },
+                        {
+                            displayName: 'Location ID',
+                            name: 'locationId',
+                            type: 'string',
+                            default: '',
+                            description: 'Facebook Page ID for a location to tag. Use Pages Search API to find location pages. Image and Reels only; not supported for Stories.',
+                        },
+                        {
+                            displayName: 'User Tags',
+                            name: 'userTags',
+                            type: 'fixedCollection',
+                            typeOptions: {
+                                multipleValues: true,
+                            },
+                            placeholder: 'Add User Tag',
+                            default: {},
+                            description: 'Users to tag in the media. username required; x and y coordinates (0–1) required for images, optional for stories. Supported for Image, Reels, and Stories.',
+                            options: [
+                                {
+                                    displayName: 'Tag',
+                                    name: 'tag',
+                                    values: [
+                                        {
+                                            displayName: 'Username',
+                                            name: 'username',
+                                            type: 'string',
+                                            default: '',
+                                            description: 'Instagram username to tag (without @)',
+                                            required: true,
+                                        },
+                                        {
+                                            displayName: 'X Position',
+                                            name: 'x',
+                                            type: 'number',
+                                            typeOptions: {
+                                                minValue: 0,
+                                                maxValue: 1,
+                                                numberStepSize: 0.01,
+                                            },
+                                            default: 0.5,
+                                            description: 'Horizontal position (0–1). Required for images, optional for stories. 0 = left edge, 1 = right edge',
+                                        },
+                                        {
+                                            displayName: 'Y Position',
+                                            name: 'y',
+                                            type: 'number',
+                                            typeOptions: {
+                                                minValue: 0,
+                                                maxValue: 1,
+                                                numberStepSize: 0.01,
+                                            },
+                                            default: 0.5,
+                                            description: 'Vertical position (0–1). Required for images, optional for stories. 0 = top edge, 1 = bottom edge',
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                        {
+                            displayName: 'Product Tags',
+                            name: 'productTags',
+                            type: 'fixedCollection',
+                            typeOptions: {
+                                multipleValues: true,
+                            },
+                            placeholder: 'Add Product Tag',
+                            default: {},
+                            description: 'Products to tag in the media. product_id required; x and y coordinates (0–1) optional. Image and Reels only; not supported for Stories. Max 5 tags.',
+                            options: [
+                                {
+                                    displayName: 'Tag',
+                                    name: 'tag',
+                                    values: [
+                                        {
+                                            displayName: 'Product ID',
+                                            name: 'product_id',
+                                            type: 'string',
+                                            default: '',
+                                            description: 'Product ID from your catalog',
+                                            required: true,
+                                        },
+                                        {
+                                            displayName: 'X Position',
+                                            name: 'x',
+                                            type: 'number',
+                                            typeOptions: {
+                                                minValue: 0,
+                                                maxValue: 1,
+                                                numberStepSize: 0.01,
+                                            },
+                                            default: 0.5,
+                                            description: 'Horizontal position (0–1). Optional. 0 = left edge, 1 = right edge',
+                                        },
+                                        {
+                                            displayName: 'Y Position',
+                                            name: 'y',
+                                            type: 'number',
+                                            typeOptions: {
+                                                minValue: 0,
+                                                maxValue: 1,
+                                                numberStepSize: 0.01,
+                                            },
+                                            default: 0.5,
+                                            description: 'Vertical position (0–1). Optional. 0 = top edge, 1 = bottom edge',
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
             ],
         };
     }
     async execute() {
-        var _a, _b, _c, _d, _e, _f;
+        var _a, _b, _c, _d, _e, _f, _g;
         const items = this.getInputData();
         const returnItems = [];
         const waitForContainerReady = async ({ creationId, hostUrl, graphApiVersion, itemIndex, pollIntervalMs, maxPollAttempts, }) => {
@@ -182,6 +313,11 @@ class Instagram {
                 const node = this.getNodeParameter('node', itemIndex);
                 const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
                 const caption = this.getNodeParameter('caption', itemIndex);
+                const additionalFields = this.getNodeParameter('additionalFields', itemIndex, {});
+                const altText = (_a = additionalFields.altText) !== null && _a !== void 0 ? _a : '';
+                const rawLocationId = additionalFields.locationId;
+                const userTagsCollection = additionalFields.userTags;
+                const productTagsCollection = additionalFields.productTags;
                 const hostUrl = 'graph.facebook.com';
                 const httpRequestMethod = 'POST';
                 const mediaUri = `https://${hostUrl}/${graphApiVersion}/${node}/media`;
@@ -190,6 +326,53 @@ class Instagram {
                     caption,
                     ...mediaPayload,
                 };
+                if (altText) {
+                    mediaQs.alt_text = altText;
+                }
+                const locationId = rawLocationId === null || rawLocationId === void 0 ? void 0 : rawLocationId.trim();
+                if (locationId) {
+                    mediaQs.location_id = locationId;
+                }
+                if ((userTagsCollection === null || userTagsCollection === void 0 ? void 0 : userTagsCollection.tag) && Array.isArray(userTagsCollection.tag) && userTagsCollection.tag.length > 0) {
+                    const userTags = userTagsCollection.tag
+                        .filter((tag) => tag.username)
+                        .map((tag) => {
+                        const tagObj = {
+                            username: tag.username,
+                        };
+                        if (tag.x !== undefined && tag.x !== null) {
+                            tagObj.x = tag.x;
+                        }
+                        if (tag.y !== undefined && tag.y !== null) {
+                            tagObj.y = tag.y;
+                        }
+                        return tagObj;
+                    });
+                    if (userTags.length > 0) {
+                        mediaQs.user_tags = JSON.stringify(userTags);
+                    }
+                }
+                if ((productTagsCollection === null || productTagsCollection === void 0 ? void 0 : productTagsCollection.tag) &&
+                    Array.isArray(productTagsCollection.tag) &&
+                    productTagsCollection.tag.length > 0) {
+                    const productTags = productTagsCollection.tag
+                        .filter((tag) => tag.product_id)
+                        .map((tag) => {
+                        const tagObj = {
+                            product_id: tag.product_id,
+                        };
+                        if (tag.x !== undefined && tag.x !== null) {
+                            tagObj.x = tag.x;
+                        }
+                        if (tag.y !== undefined && tag.y !== null) {
+                            tagObj.y = tag.y;
+                        }
+                        return tagObj;
+                    });
+                    if (productTags.length > 0) {
+                        mediaQs.product_tags = JSON.stringify(productTags);
+                    }
+                }
                 const mediaRequestOptions = {
                     headers: {
                         accept: 'application/json,text/*;q=0.99',
@@ -210,7 +393,7 @@ class Instagram {
                     let errorItem;
                     const err = error;
                     if (err.response !== undefined) {
-                        const graphApiErrors = (_b = (_a = err.response.body) === null || _a === void 0 ? void 0 : _a.error) !== null && _b !== void 0 ? _b : {};
+                        const graphApiErrors = (_c = (_b = err.response.body) === null || _b === void 0 ? void 0 : _b.error) !== null && _c !== void 0 ? _c : {};
                         errorItem = {
                             statusCode: err.statusCode,
                             ...graphApiErrors,
@@ -283,7 +466,7 @@ class Instagram {
                         let errorItem;
                         const err = error;
                         if (err.response !== undefined) {
-                            const graphApiErrors = (_d = (_c = err.response.body) === null || _c === void 0 ? void 0 : _c.error) !== null && _d !== void 0 ? _d : {};
+                            const graphApiErrors = (_e = (_d = err.response.body) === null || _d === void 0 ? void 0 : _d.error) !== null && _e !== void 0 ? _e : {};
                             errorItem = {
                                 statusCode: err.statusCode,
                                 ...graphApiErrors,
@@ -324,7 +507,7 @@ class Instagram {
                 let errorItem;
                 const errorWithGraph = error;
                 if (errorWithGraph.response !== undefined) {
-                    const graphApiErrors = (_f = (_e = errorWithGraph.response.body) === null || _e === void 0 ? void 0 : _e.error) !== null && _f !== void 0 ? _f : {};
+                    const graphApiErrors = (_g = (_f = errorWithGraph.response.body) === null || _f === void 0 ? void 0 : _f.error) !== null && _g !== void 0 ? _g : {};
                     errorItem = {
                         statusCode: errorWithGraph.statusCode,
                         ...graphApiErrors,

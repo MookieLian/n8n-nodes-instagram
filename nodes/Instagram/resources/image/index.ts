@@ -12,7 +12,7 @@ const imageFields: INodeProperties[] = [
 		displayOptions: {
 			show: {
 				resource: ['image'],
-			operation: ['publish'],
+				operation: ['publish'],
 			},
 		},
 	},
@@ -32,9 +32,10 @@ export const imageResource: ResourceHandler = {
 	publishMaxAttempts: 3,
 	buildMediaPayload(this: IExecuteFunctions, itemIndex: number): IDataObject {
 		const imageUrl = this.getNodeParameter('imageUrl', itemIndex) as string;
-		return {
+		const payload: IDataObject = {
 			image_url: imageUrl,
 		};
+		return payload;
 	},
 };
 

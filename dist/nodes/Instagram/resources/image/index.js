@@ -31,9 +31,10 @@ exports.imageResource = {
     publishMaxAttempts: 3,
     buildMediaPayload(itemIndex) {
         const imageUrl = this.getNodeParameter('imageUrl', itemIndex);
-        return {
+        const payload = {
             image_url: imageUrl,
         };
+        return payload;
     },
 };
 //# sourceMappingURL=index.js.map
