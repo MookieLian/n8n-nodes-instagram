@@ -51,7 +51,7 @@ export class Instagram implements INodeType {
 				type: 'options',
 				noDataExpression: true,
 				options: [...instagramResourceOptions],
-				default: 'image',
+				default: '',
 				description: 'Select the Instagram media type to publish',
 				required: true,
 			},
