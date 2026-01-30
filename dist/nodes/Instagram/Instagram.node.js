@@ -39,7 +39,7 @@ class Instagram {
                     type: 'options',
                     noDataExpression: true,
                     options: [...resources_1.instagramResourceOptions],
-                    default: 'image',
+                    default: '',
                     description: 'Select the Instagram media type to publish',
                     required: true,
                 },
