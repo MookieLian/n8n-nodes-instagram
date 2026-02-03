@@ -1,4 +1,4 @@
-import type { INodeProperties } from 'n8n-workflow';
+import type { INodeProperties, INodePropertyOptions } from 'n8n-workflow';
 import type { InstagramResourceType, ResourceHandler } from './types';
 import { imageResource } from './image';
 import { reelsResource } from './reels';
@@ -12,7 +12,15 @@ const handlers: Record<InstagramResourceType, ResourceHandler> = {
 
 export const instagramResourceHandlers = handlers;
 
-export const instagramResourceOptions = Object.values(handlers).map((handler) => handler.option);
+const baseResourceOptions = Object.values(handlers).map((handler) => handler.option);
+
+const commentResourceOption: INodePropertyOptions = {
+	name: 'Comments',
+	value: 'comments',
+	description: 'Moderate comments on Instagram media',
+};
+
+export const instagramResourceOptions = [...baseResourceOptions, commentResourceOption];
 
 const fieldMap = new Map<string, INodeProperties>();
 for (const handler of Object.values(handlers)) {

@@ -65,17 +65,74 @@ class Instagram {
                     required: true,
                 },
                 {
+                    displayName: 'Operation',
+                    name: 'operation',
+                    type: 'options',
+                    noDataExpression: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['comments'],
+                        },
+                    },
+                    options: [
+                        {
+                            name: 'Delete',
+                            value: 'deleteComment',
+                            action: 'Delete a comment',
+                            description: 'Delete a comment from an Instagram media object',
+                        },
+                        {
+                            name: 'Disable Comments',
+                            value: 'disableComments',
+                            action: 'Disable comments on media',
+                            description: 'Disable comments on an Instagram media object',
+                        },
+                        {
+                            name: 'Enable Comments',
+                            value: 'enableComments',
+                            action: 'Enable comments on media',
+                            description: 'Enable comments on an Instagram media object',
+                        },
+                        {
+                            name: 'Hide',
+                            value: 'hideComment',
+                            action: 'Hide a comment',
+                            description: 'Hide a comment from an Instagram media object',
+                        },
+                        {
+                            name: 'List',
+                            value: 'list',
+                            action: 'List comments',
+                            description: 'List comments on an Instagram media object',
+                        },
+                        {
+                            name: 'Send Private Reply',
+                            value: 'sendPrivateReply',
+                            action: 'Send a private reply',
+                            description: 'Send a private reply message to a commenter using the comment ID',
+                        },
+                        {
+                            name: 'Unhide',
+                            value: 'unhideComment',
+                            action: 'Unhide a comment',
+                            description: 'Unhide a previously hidden comment',
+                        },
+                    ],
+                    default: 'list',
+                    required: true,
+                },
+                {
                     displayName: 'Node',
                     name: 'node',
                     type: 'string',
                     default: '',
-                    description: 'The Instagram Business Account ID or User ID on which to publish the media',
+                    description: 'The Instagram Business Account ID or User ID on which to publish the media, or the professional account that owns the commented media',
                     placeholder: 'me',
                     required: true,
                     displayOptions: {
                         show: {
-                            resource: ['image', 'reels', 'stories'],
-                            operation: ['publish'],
+                            resource: ['image', 'reels', 'stories', 'comments'],
+                            operation: ['publish', 'sendPrivateReply'],
                         },
                     },
                 },
@@ -88,8 +145,62 @@ class Instagram {
                     required: true,
                     displayOptions: {
                         show: {
-                            resource: ['image', 'reels', 'stories'],
-                            operation: ['publish'],
+                            resource: ['image', 'reels', 'stories', 'comments'],
+                            operation: [
+                                'publish',
+                                'list',
+                                'hideComment',
+                                'unhideComment',
+                                'deleteComment',
+                                'disableComments',
+                                'enableComments',
+                                'sendPrivateReply',
+                            ],
+                        },
+                    },
+                },
+                {
+                    displayName: 'Media ID',
+                    name: 'mediaId',
+                    type: 'string',
+                    default: '',
+                    description: 'The IG Media ID whose comments you want to manage',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['comments'],
+                            operation: ['list', 'disableComments', 'enableComments'],
+                        },
+                    },
+                },
+                {
+                    displayName: 'Comment ID',
+                    name: 'commentId',
+                    type: 'string',
+                    default: '',
+                    description: 'The IG Comment ID you want to moderate',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['comments'],
+                            operation: ['hideComment', 'unhideComment', 'deleteComment', 'sendPrivateReply'],
+                        },
+                    },
+                },
+                {
+                    displayName: 'Message',
+                    name: 'privateReplyText',
+                    type: 'string',
+                    typeOptions: {
+                        rows: 4,
+                    },
+                    default: '',
+                    description: 'The text of the private reply message',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['comments'],
+                            operation: ['sendPrivateReply'],
                         },
                     },
                 },
@@ -243,9 +354,10 @@ class Instagram {
         };
     }
     async execute() {
-        var _a, _b, _c, _d, _e, _f, _g;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j;
         const items = this.getInputData();
         const returnItems = [];
+        const hostUrl = 'graph.facebook.com';
         const waitForContainerReady = async ({ creationId, hostUrl, graphApiVersion, itemIndex, pollIntervalMs, maxPollAttempts, }) => {
             const statusUri = `https://${hostUrl}/${graphApiVersion}/${creationId}`;
             const statusFields = ['status_code', 'status'];
@@ -299,6 +411,126 @@ class Instagram {
             try {
                 const resource = this.getNodeParameter('resource', itemIndex);
                 const operation = this.getNodeParameter('operation', itemIndex);
+                if (resource === 'comments') {
+                    const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
+                    try {
+                        if (operation === 'list') {
+                            const mediaId = this.getNodeParameter('mediaId', itemIndex);
+                            const url = `https://${hostUrl}/${graphApiVersion}/${mediaId}/comments`;
+                            const requestOptions = {
+                                headers: {
+                                    accept: 'application/json,text/*;q=0.99',
+                                },
+                                method: 'GET',
+                                url,
+                                json: true,
+                            };
+                            const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                            returnItems.push({ json: response, pairedItem: { item: itemIndex } });
+                            continue;
+                        }
+                        if (operation === 'hideComment' || operation === 'unhideComment') {
+                            const commentId = this.getNodeParameter('commentId', itemIndex);
+                            const hideValue = operation === 'hideComment';
+                            const url = `https://${hostUrl}/${graphApiVersion}/${commentId}`;
+                            const requestOptions = {
+                                headers: {
+                                    accept: 'application/json,text/*;q=0.99',
+                                },
+                                method: 'POST',
+                                url,
+                                qs: {
+                                    hide: hideValue,
+                                },
+                                json: true,
+                            };
+                            const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                            returnItems.push({ json: response, pairedItem: { item: itemIndex } });
+                            continue;
+                        }
+                        if (operation === 'deleteComment') {
+                            const commentId = this.getNodeParameter('commentId', itemIndex);
+                            const url = `https://${hostUrl}/${graphApiVersion}/${commentId}`;
+                            const requestOptions = {
+                                headers: {
+                                    accept: 'application/json,text/*;q=0.99',
+                                },
+                                method: 'DELETE',
+                                url,
+                                json: true,
+                            };
+                            const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                            returnItems.push({ json: response, pairedItem: { item: itemIndex } });
+                            continue;
+                        }
+                        if (operation === 'disableComments' || operation === 'enableComments') {
+                            const mediaId = this.getNodeParameter('mediaId', itemIndex);
+                            const commentEnabled = operation === 'enableComments';
+                            const url = `https://${hostUrl}/${graphApiVersion}/${mediaId}`;
+                            const requestOptions = {
+                                headers: {
+                                    accept: 'application/json,text/*;q=0.99',
+                                },
+                                method: 'POST',
+                                url,
+                                qs: {
+                                    comment_enabled: commentEnabled,
+                                },
+                                json: true,
+                            };
+                            const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                            returnItems.push({ json: response, pairedItem: { item: itemIndex } });
+                            continue;
+                        }
+                        if (operation === 'sendPrivateReply') {
+                            const accountId = this.getNodeParameter('node', itemIndex);
+                            const commentId = this.getNodeParameter('commentId', itemIndex);
+                            const text = this.getNodeParameter('privateReplyText', itemIndex);
+                            const url = `https://${hostUrl}/${graphApiVersion}/${accountId}/messages`;
+                            const requestOptions = {
+                                headers: {
+                                    accept: 'application/json,text/*;q=0.99',
+                                    'Content-Type': 'application/json',
+                                },
+                                method: 'POST',
+                                url,
+                                body: {
+                                    recipient: {
+                                        comment_id: commentId,
+                                    },
+                                    message: {
+                                        text,
+                                    },
+                                },
+                                json: true,
+                            };
+                            const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                            returnItems.push({ json: response, pairedItem: { item: itemIndex } });
+                            continue;
+                        }
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Unsupported comments operation: ${operation}`, { itemIndex });
+                    }
+                    catch (error) {
+                        if (!this.continueOnFail()) {
+                            throw new n8n_workflow_1.NodeApiError(this.getNode(), error);
+                        }
+                        let errorItem;
+                        const errorWithGraph = error;
+                        if (errorWithGraph.response !== undefined) {
+                            const graphApiErrors = (_b = (_a = errorWithGraph.response.body) === null || _a === void 0 ? void 0 : _a.error) !== null && _b !== void 0 ? _b : {};
+                            errorItem = {
+                                statusCode: errorWithGraph.statusCode,
+                                ...graphApiErrors,
+                                headers: errorWithGraph.response.headers,
+                            };
+                        }
+                        else {
+                            errorItem = error;
+                        }
+                        returnItems.push({ json: { ...errorItem }, pairedItem: { item: itemIndex } });
+                        continue;
+                    }
+                }
                 if (operation !== 'publish') {
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Unsupported operation: ${operation}`, {
                         itemIndex,
@@ -314,11 +546,10 @@ class Instagram {
                 const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
                 const caption = this.getNodeParameter('caption', itemIndex);
                 const additionalFields = this.getNodeParameter('additionalFields', itemIndex, {});
-                const altText = (_a = additionalFields.altText) !== null && _a !== void 0 ? _a : '';
+                const altText = (_c = additionalFields.altText) !== null && _c !== void 0 ? _c : '';
                 const rawLocationId = additionalFields.locationId;
                 const userTagsCollection = additionalFields.userTags;
                 const productTagsCollection = additionalFields.productTags;
-                const hostUrl = 'graph.facebook.com';
                 const httpRequestMethod = 'POST';
                 const mediaUri = `https://${hostUrl}/${graphApiVersion}/${node}/media`;
                 const mediaPayload = handler.buildMediaPayload.call(this, itemIndex);
@@ -393,7 +624,7 @@ class Instagram {
                     let errorItem;
                     const err = error;
                     if (err.response !== undefined) {
-                        const graphApiErrors = (_c = (_b = err.response.body) === null || _b === void 0 ? void 0 : _b.error) !== null && _c !== void 0 ? _c : {};
+                        const graphApiErrors = (_e = (_d = err.response.body) === null || _d === void 0 ? void 0 : _d.error) !== null && _e !== void 0 ? _e : {};
                         errorItem = {
                             statusCode: err.statusCode,
                             ...graphApiErrors,
@@ -466,7 +697,7 @@ class Instagram {
                         let errorItem;
                         const err = error;
                         if (err.response !== undefined) {
-                            const graphApiErrors = (_e = (_d = err.response.body) === null || _d === void 0 ? void 0 : _d.error) !== null && _e !== void 0 ? _e : {};
+                            const graphApiErrors = (_g = (_f = err.response.body) === null || _f === void 0 ? void 0 : _f.error) !== null && _g !== void 0 ? _g : {};
                             errorItem = {
                                 statusCode: err.statusCode,
                                 ...graphApiErrors,
@@ -507,7 +738,7 @@ class Instagram {
                 let errorItem;
                 const errorWithGraph = error;
                 if (errorWithGraph.response !== undefined) {
-                    const graphApiErrors = (_g = (_f = errorWithGraph.response.body) === null || _f === void 0 ? void 0 : _f.error) !== null && _g !== void 0 ? _g : {};
+                    const graphApiErrors = (_j = (_h = errorWithGraph.response.body) === null || _h === void 0 ? void 0 : _h.error) !== null && _j !== void 0 ? _j : {};
                     errorItem = {
                         statusCode: errorWithGraph.statusCode,
                         ...graphApiErrors,

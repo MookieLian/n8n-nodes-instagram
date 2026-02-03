@@ -10,7 +10,13 @@ const handlers = {
     stories: stories_1.storiesResource,
 };
 exports.instagramResourceHandlers = handlers;
-exports.instagramResourceOptions = Object.values(handlers).map((handler) => handler.option);
+const baseResourceOptions = Object.values(handlers).map((handler) => handler.option);
+const commentResourceOption = {
+    name: 'Comments',
+    value: 'comments',
+    description: 'Moderate comments on Instagram media',
+};
+exports.instagramResourceOptions = [...baseResourceOptions, commentResourceOption];
 const fieldMap = new Map();
 for (const handler of Object.values(handlers)) {
     for (const field of handler.fields) {
