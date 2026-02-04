@@ -815,8 +815,7 @@ class Instagram {
                             continue;
                         }
                         if (operation === 'getMe') {
-                            const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
-                            const url = `https://${hostUrl}/${graphApiVersion}/me`;
+                            const url = 'https://graph.facebook.com/v22.0/me';
                             const requestOptions = {
                                 headers: {
                                     accept: 'application/json,text/*;q=0.99',
