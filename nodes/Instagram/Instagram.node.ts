@@ -946,12 +946,10 @@ export class Instagram implements INodeType {
 						}
 
 						if (operation === 'getMe') {
-							const graphApiVersion = this.getNodeParameter(
-								'graphApiVersion',
-								itemIndex,
-							) as string;
-
-							const url = `https://${hostUrl}/${graphApiVersion}/me`;
+							// Use a fixed versioned /me endpoint so this operation
+							// does not depend on any node parameters that may be
+							// missing in older saved workflows or older node versions.
+							const url = 'https://graph.facebook.com/v22.0/me';
 							const requestOptions: IHttpRequestOptions = {
 								headers: {
 									accept: 'application/json,text/*;q=0.99',
