@@ -20,7 +20,7 @@ Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes
 
 ## Operations
 
-The node exposes four resources:
+The node exposes several resources:
 
 | Resource | Description |
 | --- | --- |
@@ -28,6 +28,10 @@ The node exposes four resources:
 | `Reels` | Publish a reel video. Handles container polling until the video is processed before publishing. |
 | `Stories` | Publish a story video using the same logic as reels with `media_type=STORIES`. |
 | `Comments` | List comments on media, hide/unhide or delete individual comments, disable/enable comments on media, and send **private replies** to commenters. |
+| `IG User` | Read basic profile data for an Instagram Business/Creator account and list its media using the IG User Graph API. |
+| `IG Hashtag` | Search for hashtags by name and fetch top or recent media for a hashtag with paging and limit/return-all support. |
+| `Messaging` | Send direct messages (DMs) to Instagram users via the Instagram Messaging API. |
+| `Auth` | Exchange short-lived Instagram User tokens for long-lived tokens, refresh long-lived tokens, and call the Graph API `/me` endpoint. |
 
 ## Credentials
 
@@ -75,19 +79,77 @@ Steps:
    - `Node` – the Instagram professional account ID that owns the commented media.  
    - `Message` – the private reply text that will be sent to the commenter’s inbox/request folder (subject to the 7‑day and messaging window rules defined by Meta).  
 
+### Reading IG User profile and media (IG User)
+
+1. Add the **Instagram** node and set **Resource** to `IG User`.  
+2. Choose an **Operation**:
+   - `Get` – fetch basic profile information for an Instagram Business/Creator account (username, name, bio, website, media_count, followers/follows, profile picture URL).  
+   - `Get Media` – list media owned by that account, including media type, URLs, caption, permalink, timestamp and username.  
+3. Provide:
+   - `Node` – the IG User ID of the professional account you want to read (or `me` if your credential token belongs to that account).  
+   - `Graph API Version` – the Graph version to use (for example `v24.0`).  
+
+### Searching hashtags and fetching hashtag media (IG Hashtag)
+
+1. Add the **Instagram** node and set **Resource** to `IG Hashtag`.  
+2. Choose an **Operation**:
+   - `Search` – look up a hashtag by name and get its global hashtag ID.  
+   - `Get Recent Media` – get the most recently published media tagged with a hashtag.  
+   - `Get Top Media` – get the most popular media tagged with a hashtag.  
+3. For **Search**, provide:
+   - `Node` – the IG User ID performing the query.  
+   - `Hashtag Name` – the hashtag name, without `#`.  
+4. For **Get Recent Media** / **Get Top Media**, provide:
+   - `Node` – the IG User ID performing the query.  
+   - `Hashtag ID` – the ID returned from the search operation.  
+   - `Return All` / `Limit` – choose whether to fetch all available media (within a safety cap) or only up to a limit.  
+
+### Sending direct messages (Messaging)
+
+1. Add the **Instagram** node and set **Resource** to `Messaging`.  
+2. Choose **Operation** `Send Message`.  
+3. Provide:
+   - `Node` – the IG professional account ID that will send the message.  
+   - `Graph API Version` – the Graph version to use (for example `v24.0`).  
+   - `Recipient IG User ID` – the Instagram-scoped user ID (IGSID) of the recipient, typically obtained from Messaging webhook events.  
+   - `Message Text` – the text body of the direct message.  
+
+### Token exchange, refresh and `/me` (Auth)
+
+1. Add the **Instagram** node and set **Resource** to `Auth`.  
+2. Choose an **Operation**:
+   - `Exchange Access Token` – exchange a **short-lived** Instagram User access token for a **long-lived** token.  
+   - `Refresh Access Token` – refresh an existing long-lived token using the Instagram Platform refresh endpoint.  
+   - `Get Me` – call the Graph API `/me` endpoint using the `instagramApi` credential’s access token.  
+3. For **Exchange Access Token**, provide:
+   - `Short-Lived Access Token` – the short-lived token from your login flow.  
+   - `App Secret` – the Instagram App Secret from your Meta App Dashboard.  
+4. For **Refresh Access Token**, optionally provide:
+   - `Access Token` – the long-lived token to refresh. Leave empty to use the token from the credential.  
+5. For **Get Me**, provide:
+   - `Graph API Version` – the Graph version to use (for example `v24.0`). The node will read `/me` using the credential’s token.  
+
 ## Resources
 
 * [n8n community nodes documentation](https://docs.n8n.io/integrations/#community-nodes)  
 * [Instagram Graph API - Publishing](https://developers.facebook.com/docs/instagram-api/reference/ig-user/media)  
 * [Video/Reels publishing guide](https://developers.facebook.com/docs/instagram-api/guides/content-publishing/reels/)  
 * [Comment Moderation](https://developers.facebook.com/docs/instagram-platform/comment-moderation)  
-* [Private Replies](https://developers.facebook.com/docs/instagram-platform/private-replies)
+* [Private Replies](https://developers.facebook.com/docs/instagram-platform/private-replies)  
+* [IG User](https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-user)  
+* [IG Hashtag Search](https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-hashtag-search/)  
+* [IG Hashtag Recent Media](https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-hashtag/recent-media/)  
+* [IG Hashtag Top Media](https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-hashtag/top-media/)  
+* [Instagram Messaging API](https://developers.facebook.com/docs/messenger-platform/instagram/features/)  
+* [Instagram Platform Access Token](https://developers.facebook.com/docs/instagram-platform/reference/access_token/)  
+* [Instagram Platform Refresh Access Token](https://developers.facebook.com/docs/instagram-platform/reference/refresh_access_token/)  
+* [Instagram Platform /me](https://developers.facebook.com/docs/instagram-platform/reference/me/)
 
 ## Version history
 
 | Version | Notes |
 | --- | --- |
-| 2.3.0 | Upcoming: Adds `Comments` resource with comment moderation (list/hide/unhide/delete, enable/disable comments) and **Private Replies** support. |
+| 2.3.0 | Upcoming: Adds `Comments` resource with comment moderation (list/hide/unhide/delete, enable/disable comments) and **Private Replies** support, an `IG User` resource for reading profile data and listing media, `IG Hashtag` resource for hashtag search and hashtag media, `Messaging` resource for sending DMs, and `Auth` helpers for access token exchange/refresh and `/me`. |
 | 2.2.0 | Improved publishing UX, adds alt text, location ID, user tags, and product tags support for media publishing. |
 | 2.1.0 | Stable release of Instagram publishing (Image/Reels/Stories) using the container → publish flow with robust polling and error handling. |
 | 0.1.0 | Initial release with Image, Reels and Stories publishing & built-in container polling. |

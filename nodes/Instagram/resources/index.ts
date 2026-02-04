@@ -20,7 +20,31 @@ const commentResourceOption: INodePropertyOptions = {
 	description: 'Moderate comments on Instagram media',
 };
 
-export const instagramResourceOptions = [...baseResourceOptions, commentResourceOption];
+const igUserResourceOption: INodePropertyOptions = {
+	name: 'IG User',
+	value: 'igUser',
+	description: 'Read data for an Instagram Business or Creator account',
+};
+
+const igHashtagResourceOption: INodePropertyOptions = {
+	name: 'IG Hashtag',
+	value: 'igHashtag',
+	description: 'Search hashtags and fetch top or recent media for a hashtag',
+};
+
+const messagingResourceOption: INodePropertyOptions = {
+	name: 'Messaging',
+	value: 'messaging',
+	description: 'Send direct messages via the Instagram Messaging API',
+};
+
+export const instagramResourceOptions = [
+	...baseResourceOptions,
+	commentResourceOption,
+	igUserResourceOption,
+	igHashtagResourceOption,
+	messagingResourceOption,
+];
 
 const fieldMap = new Map<string, INodeProperties>();
 for (const handler of Object.values(handlers)) {

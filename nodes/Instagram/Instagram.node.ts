@@ -8,11 +8,7 @@ import type {
 	JsonObject,
 } from 'n8n-workflow';
 import { NodeApiError, NodeConnectionTypes, NodeOperationError, sleep } from 'n8n-workflow';
-import {
-	instagramResourceFields,
-	instagramResourceHandlers,
-	instagramResourceOptions,
-} from './resources';
+import { instagramResourceFields, instagramResourceHandlers } from './resources';
 import type { InstagramResourceType } from './resources/types';
 
 const READY_STATUSES = new Set(['FINISHED', 'PUBLISHED', 'READY']);
@@ -50,9 +46,50 @@ export class Instagram implements INodeType {
 				name: 'resource',
 				type: 'options',
 				noDataExpression: true,
-				options: [...instagramResourceOptions],
-				default: '',
-				description: 'Select the Instagram media type to publish',
+				options: [
+					{
+						name: 'Auth',
+						value: 'auth',
+						description: 'Exchange and refresh Instagram access tokens; call /me',
+					},
+					{
+						name: 'Comment',
+						value: 'comments',
+						description: 'Moderate comments on Instagram media',
+					},
+					{
+						name: 'IG Hashtag',
+						value: 'igHashtag',
+						description: 'Search hashtags and fetch top or recent media for a hashtag',
+					},
+					{
+						name: 'IG User',
+						value: 'igUser',
+						description: 'Read profile and media for an Instagram Business or Creator account',
+					},
+					{
+						name: 'Image',
+						value: 'image',
+						description: 'Publish image posts to Instagram',
+					},
+					{
+						name: 'Messaging',
+						value: 'messaging',
+						description: 'Send direct messages via the Instagram Messaging API',
+					},
+					{
+						name: 'Reel',
+						value: 'reels',
+						description: 'Publish Reels videos to Instagram',
+					},
+					{
+						name: 'Story',
+						value: 'stories',
+						description: 'Publish story videos to Instagram',
+					},
+				],
+				default: 'image',
+				description: 'Select what you want to do with the Instagram API',
 				required: true,
 			},
 			{
@@ -135,18 +172,188 @@ export class Instagram implements INodeType {
 				required: true,
 			},
 			{
+				displayName: 'Operation',
+				name: 'operation',
+				type: 'options',
+				noDataExpression: true,
+				displayOptions: {
+					show: {
+						resource: ['igUser'],
+					},
+				},
+				options: [
+					{
+						name: 'Get',
+						value: 'get',
+						action: 'Get IG user',
+						description: 'Get basic profile information for an Instagram Business or Creator account',
+					},
+					{
+						name: 'Get Media',
+						value: 'getMedia',
+						action: 'Get media',
+						description: 'List media objects owned by an Instagram Business or Creator account',
+					},
+				],
+				default: 'get',
+				required: true,
+			},
+			{
+				displayName: 'Operation',
+				name: 'operation',
+				type: 'options',
+				noDataExpression: true,
+				displayOptions: {
+					show: {
+						resource: ['auth'],
+					},
+				},
+				options: [
+					{
+						name: 'Exchange Access Token',
+						value: 'exchangeAccessToken',
+						action: 'Exchange short lived token',
+						description:
+							'Exchange a short-lived Instagram User access token for a long-lived token using the Instagram Platform access token endpoint',
+					},
+					{
+						name: 'Get Me',
+						value: 'getMe',
+						action: 'Get me profile',
+						description:
+							'Call the Graph API /me endpoint using the access token from the Instagram API credential',
+					},
+					{
+						name: 'Refresh Access Token',
+						value: 'refreshAccessToken',
+						action: 'Refresh access token',
+						description:
+							'Refresh a long-lived Instagram User access token using the Instagram Platform refresh endpoint',
+					},
+				],
+				default: 'refreshAccessToken',
+				required: true,
+			},
+			{
+				displayName: 'Operation',
+				name: 'operation',
+				type: 'options',
+				noDataExpression: true,
+				displayOptions: {
+					show: {
+						resource: ['igHashtag'],
+					},
+				},
+				options: [
+					{
+						name: 'Search',
+						value: 'search',
+						action: 'Search hashtags',
+						description: 'Search for a hashtag by name and return its ID',
+					},
+					{
+						name: 'Get Recent Media',
+						value: 'getRecentMedia',
+						action: 'Get recent media for hashtag',
+						description: 'Get the most recent media tagged with a hashtag',
+					},
+					{
+						name: 'Get Top Media',
+						value: 'getTopMedia',
+						action: 'Get top media for hashtag',
+						description: 'Get the most popular media tagged with a hashtag',
+					},
+				],
+				default: 'search',
+				required: true,
+			},
+			{
+				displayName: 'Operation',
+				name: 'operation',
+				type: 'options',
+				noDataExpression: true,
+				displayOptions: {
+					show: {
+						resource: ['messaging'],
+					},
+				},
+				options: [
+					{
+						name: 'Send Message',
+						value: 'sendMessage',
+						action: 'Send direct message',
+						description: 'Send a text message to an Instagram user via the Messaging API',
+					},
+				],
+				default: 'sendMessage',
+				required: true,
+			},
+			{
 				displayName: 'Node',
 				name: 'node',
 				type: 'string',
 				default: '',
 				description:
-					'The Instagram Business Account ID or User ID on which to publish the media, or the professional account that owns the commented media',
+					'The Instagram Business Account ID or User ID on which to publish the media, or the professional account that owns the commented media, or the IG User to read data for, or the IG User performing a hashtag or messaging query',
 				placeholder: 'me',
 				required: true,
 				displayOptions: {
 					show: {
-						resource: ['image', 'reels', 'stories', 'comments'],
-						operation: ['publish', 'sendPrivateReply'],
+						resource: ['image', 'reels', 'stories', 'comments', 'igUser', 'igHashtag', 'messaging'],
+						operation: ['publish', 'sendPrivateReply', 'get', 'getMedia', 'search', 'getRecentMedia', 'getTopMedia', 'sendMessage'],
+					},
+				},
+			},
+			{
+				displayName: 'Access Token',
+				name: 'accessToken',
+				type: 'string',
+				typeOptions: {
+					password: true,
+				},
+				default: '',
+				description:
+					'The long-lived Instagram User access token to refresh. Leave empty to use the access token from the Instagram API credential.',
+				displayOptions: {
+					show: {
+						resource: ['auth'],
+						operation: ['refreshAccessToken'],
+					},
+				},
+			},
+			{
+				displayName: 'Short-Lived Access Token',
+				name: 'shortLivedAccessToken',
+				type: 'string',
+				typeOptions: {
+					password: true,
+				},
+				default: '',
+				description:
+					'The short-lived Instagram User access token to exchange for a long-lived token. This is usually obtained from the login flow.',
+				required: true,
+				displayOptions: {
+					show: {
+						resource: ['auth'],
+						operation: ['exchangeAccessToken'],
+					},
+				},
+			},
+			{
+				displayName: 'App Secret',
+				name: 'appSecret',
+				type: 'string',
+				typeOptions: {
+					password: true,
+				},
+				default: '',
+				description:
+					'Instagram App Secret from the Meta App Dashboard. Required to securely exchange a short-lived access token for a long-lived token.',
+				required: true,
+				displayOptions: {
+					show: {
+						resource: ['auth'],
+						operation: ['exchangeAccessToken'],
 					},
 				},
 			},
@@ -159,7 +366,7 @@ export class Instagram implements INodeType {
 				required: true,
 				displayOptions: {
 					show: {
-						resource: ['image', 'reels', 'stories', 'comments'],
+						resource: ['image', 'reels', 'stories', 'comments', 'igUser', 'igHashtag', 'auth', 'messaging'],
 						operation: [
 							'publish',
 							'list',
@@ -168,8 +375,106 @@ export class Instagram implements INodeType {
 							'deleteComment',
 							'disableComments',
 							'enableComments',
+							'get',
+							'getMedia',
+							'search',
+							'getRecentMedia',
+							'getTopMedia',
+							'getMe',
+							'sendMessage',
 							'sendPrivateReply',
 						],
+					},
+				},
+			},
+			{
+				displayName: 'Return All',
+				name: 'returnAll',
+				type: 'boolean',
+				default: false,
+				description: 'Whether to return all results or only up to a given limit',
+				displayOptions: {
+					show: {
+						resource: ['igUser', 'igHashtag'],
+						operation: ['getMedia', 'getRecentMedia', 'getTopMedia'],
+					},
+				},
+			},
+			{
+				displayName: 'Limit',
+				name: 'limit',
+				type: 'number',
+				typeOptions: {
+					minValue: 1,
+					maxValue: 500,
+				},
+				default: 50,
+				description: 'Max number of results to return',
+				displayOptions: {
+					show: {
+						resource: ['igUser', 'igHashtag'],
+						operation: ['getMedia', 'getRecentMedia', 'getTopMedia'],
+						returnAll: [false],
+					},
+				},
+			},
+			{
+				displayName: 'Recipient IG User ID',
+				name: 'recipientId',
+				type: 'string',
+				default: '',
+				description:
+					'The Instagram-scoped user ID (IGSID) of the recipient. This is provided in webhook events or other Messaging API responses.',
+				required: true,
+				displayOptions: {
+					show: {
+						resource: ['messaging'],
+						operation: ['sendMessage'],
+					},
+				},
+			},
+			{
+				displayName: 'Message Text',
+				name: 'messageText',
+				type: 'string',
+				typeOptions: {
+					rows: 4,
+				},
+				default: '',
+				description: 'The text content of the direct message to send',
+				required: true,
+				displayOptions: {
+					show: {
+						resource: ['messaging'],
+						operation: ['sendMessage'],
+					},
+				},
+			},
+			{
+				displayName: 'Hashtag Name',
+				name: 'hashtagName',
+				type: 'string',
+				default: '',
+				description: 'The hashtag name to search for, without the # symbol',
+				required: true,
+				displayOptions: {
+					show: {
+						resource: ['igHashtag'],
+						operation: ['search'],
+					},
+				},
+			},
+			{
+				displayName: 'Hashtag ID',
+				name: 'hashtagId',
+				type: 'string',
+				default: '',
+				description: 'The IG Hashtag ID returned by the hashtag search',
+				required: true,
+				displayOptions: {
+					show: {
+						resource: ['igHashtag'],
+						operation: ['getRecentMedia', 'getTopMedia'],
 					},
 				},
 			},
@@ -481,6 +786,535 @@ export class Instagram implements INodeType {
 			try {
 				const resource = this.getNodeParameter('resource', itemIndex) as string;
 				const operation = this.getNodeParameter('operation', itemIndex) as string;
+
+				if (resource === 'messaging') {
+					const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
+					const accountId = this.getNodeParameter('node', itemIndex) as string;
+
+					try {
+						if (operation === 'sendMessage') {
+							const recipientId = this.getNodeParameter('recipientId', itemIndex) as string;
+							const text = this.getNodeParameter('messageText', itemIndex) as string;
+
+							const url = `https://${hostUrl}/${graphApiVersion}/${accountId}/messages`;
+
+							const requestOptions: IHttpRequestOptions = {
+								headers: {
+									accept: 'application/json,text/*;q=0.99',
+									'Content-Type': 'application/json',
+								},
+								method: 'POST',
+								url,
+								body: {
+									recipient: {
+										id: recipientId,
+									},
+									message: {
+										text,
+									},
+								},
+								json: true,
+							};
+
+							const response = (await this.helpers.httpRequestWithAuthentication.call(
+								this,
+								'instagramApi',
+								requestOptions,
+							)) as IDataObject;
+
+							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
+							continue;
+						}
+
+						throw new NodeOperationError(
+							this.getNode(),
+							`Unsupported messaging operation: ${operation}`,
+							{ itemIndex },
+						);
+					} catch (error) {
+						if (!this.continueOnFail()) {
+							throw new NodeApiError(this.getNode(), error as JsonObject);
+						}
+
+						let errorItem;
+						type GraphError = {
+							message?: string;
+							code?: number;
+							error_subcode?: number;
+						};
+						type ErrorWithGraph = {
+							response?: {
+								body?: {
+									error?: GraphError;
+								};
+								headers?: IDataObject;
+							};
+							statusCode?: number;
+						};
+						const errorWithGraph = error as ErrorWithGraph;
+						if (errorWithGraph.response !== undefined) {
+							const graphApiErrors = errorWithGraph.response.body?.error ?? {};
+							errorItem = {
+								statusCode: errorWithGraph.statusCode,
+								...graphApiErrors,
+								headers: errorWithGraph.response.headers,
+							};
+						} else {
+							errorItem = error as IDataObject;
+						}
+						returnItems.push({ json: { ...errorItem }, pairedItem: { item: itemIndex } });
+						continue;
+					}
+				}
+
+				if (resource === 'auth') {
+					try {
+						if (operation === 'refreshAccessToken') {
+							let token =
+								(this.getNodeParameter('accessToken', itemIndex, '') as string | undefined) ?? '';
+
+							if (!token) {
+								const credentials = (await this.getCredentials('instagramApi')) as
+									| {
+											accessToken?: string;
+									  }
+									| null;
+
+								token = credentials?.accessToken ?? '';
+							}
+
+							if (!token) {
+								throw new NodeOperationError(
+									this.getNode(),
+									'No access token provided and no access token found in the Instagram API credential.',
+									{ itemIndex },
+								);
+							}
+
+							const url = 'https://graph.instagram.com/refresh_access_token';
+							const requestOptions: IHttpRequestOptions = {
+								headers: {
+									accept: 'application/json,text/*;q=0.99',
+								},
+								method: 'GET',
+								url,
+								qs: {
+									grant_type: 'ig_refresh_token',
+									access_token: token,
+								},
+								json: true,
+							};
+
+							const response = (await this.helpers.httpRequest.call(
+								this,
+								requestOptions,
+							)) as IDataObject;
+
+							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
+							continue;
+						}
+
+						if (operation === 'exchangeAccessToken') {
+							const shortLivedToken = this.getNodeParameter(
+								'shortLivedAccessToken',
+								itemIndex,
+							) as string;
+							const appSecret = this.getNodeParameter('appSecret', itemIndex) as string;
+
+							const url = 'https://graph.instagram.com/access_token';
+							const requestOptions: IHttpRequestOptions = {
+								headers: {
+									accept: 'application/json,text/*;q=0.99',
+								},
+								method: 'GET',
+								url,
+								qs: {
+									grant_type: 'ig_exchange_token',
+									client_secret: appSecret,
+									access_token: shortLivedToken,
+								},
+								json: true,
+							};
+
+							const response = (await this.helpers.httpRequest.call(
+								this,
+								requestOptions,
+							)) as IDataObject;
+
+							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
+							continue;
+						}
+
+						if (operation === 'getMe') {
+							const graphApiVersion = this.getNodeParameter(
+								'graphApiVersion',
+								itemIndex,
+							) as string;
+
+							const url = `https://${hostUrl}/${graphApiVersion}/me`;
+							const requestOptions: IHttpRequestOptions = {
+								headers: {
+									accept: 'application/json,text/*;q=0.99',
+								},
+								method: 'GET',
+								url,
+								json: true,
+							};
+
+							const response = (await this.helpers.httpRequestWithAuthentication.call(
+								this,
+								'instagramApi',
+								requestOptions,
+							)) as IDataObject;
+
+							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
+							continue;
+						}
+
+						throw new NodeOperationError(
+							this.getNode(),
+							`Unsupported auth operation: ${operation}`,
+							{ itemIndex },
+						);
+					} catch (error) {
+						if (!this.continueOnFail()) {
+							throw new NodeApiError(this.getNode(), error as JsonObject);
+						}
+
+						let errorItem;
+						type GraphError = {
+							message?: string;
+							code?: number;
+							error_subcode?: number;
+						};
+						type ErrorWithGraph = {
+							response?: {
+								body?: {
+									error?: GraphError;
+								};
+								headers?: IDataObject;
+							};
+							statusCode?: number;
+						};
+						const errorWithGraph = error as ErrorWithGraph;
+						if (errorWithGraph.response !== undefined) {
+							const graphApiErrors = errorWithGraph.response.body?.error ?? {};
+							errorItem = {
+								statusCode: errorWithGraph.statusCode,
+								...graphApiErrors,
+								headers: errorWithGraph.response.headers,
+							};
+						} else {
+							errorItem = error as IDataObject;
+						}
+						returnItems.push({ json: { ...errorItem }, pairedItem: { item: itemIndex } });
+						continue;
+					}
+				}
+
+				if (resource === 'igHashtag') {
+					const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
+					const accountId = this.getNodeParameter('node', itemIndex) as string;
+
+					try {
+						if (operation === 'search') {
+							const hashtagName = this.getNodeParameter('hashtagName', itemIndex) as string;
+
+							const url = `https://${hostUrl}/${graphApiVersion}/ig_hashtag_search`;
+							const requestOptions: IHttpRequestOptions = {
+								headers: {
+									accept: 'application/json,text/*;q=0.99',
+								},
+								method: 'GET',
+								url,
+								qs: {
+									user_id: accountId,
+									q: hashtagName,
+								},
+								json: true,
+							};
+
+							const response = (await this.helpers.httpRequestWithAuthentication.call(
+								this,
+								'instagramApi',
+								requestOptions,
+							)) as IDataObject;
+
+							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
+							continue;
+						}
+
+						if (operation === 'getRecentMedia' || operation === 'getTopMedia') {
+							const hashtagId = this.getNodeParameter('hashtagId', itemIndex) as string;
+							const returnAll = this.getNodeParameter('returnAll', itemIndex, false) as boolean;
+							const limit = this.getNodeParameter('limit', itemIndex, 0) as number;
+
+							const edge = operation === 'getRecentMedia' ? 'recent_media' : 'top_media';
+							const baseUrl = `https://${hostUrl}/${graphApiVersion}/${hashtagId}/${edge}`;
+
+							const fields = [
+								'id',
+								'media_type',
+								'media_url',
+								'caption',
+								'permalink',
+								'timestamp',
+								'comments_count',
+								'like_count',
+							].join(',');
+
+							const accumulated: IDataObject[] = [];
+							let after: string | undefined;
+
+							// Basic safety limit to avoid infinite loops when returnAll is true
+							const hardCap = returnAll ? 5000 : limit;
+
+							let hasMore = true;
+							while (hasMore) {
+								const remaining = returnAll ? undefined : hardCap - accumulated.length;
+								const pageLimit = remaining !== undefined ? Math.min(remaining, 50) : 50;
+
+								const qs: IDataObject = {
+									user_id: accountId,
+									fields,
+									limit: pageLimit,
+								};
+
+								if (after) {
+									qs.after = after;
+								}
+
+								const requestOptions: IHttpRequestOptions = {
+									headers: {
+										accept: 'application/json,text/*;q=0.99',
+									},
+									method: 'GET',
+									url: baseUrl,
+									qs,
+									json: true,
+								};
+
+								const response = (await this.helpers.httpRequestWithAuthentication.call(
+									this,
+									'instagramApi',
+									requestOptions,
+								)) as IDataObject;
+
+								const pageData = (response.data as IDataObject[] | undefined) ?? [];
+								accumulated.push(...pageData);
+
+								const paging = response.paging as
+									| {
+											cursors?: { after?: string };
+									  }
+									| undefined;
+								after = paging?.cursors?.after;
+
+								if ((!returnAll && accumulated.length >= hardCap) || !after) {
+									hasMore = false;
+								}
+							}
+
+							const finalData = !returnAll && hardCap > 0 ? accumulated.slice(0, hardCap) : accumulated;
+
+							returnItems.push({ json: { data: finalData }, pairedItem: { item: itemIndex } });
+							continue;
+						}
+
+						throw new NodeOperationError(
+							this.getNode(),
+							`Unsupported IG Hashtag operation: ${operation}`,
+							{ itemIndex },
+						);
+					} catch (error) {
+						if (!this.continueOnFail()) {
+							throw new NodeApiError(this.getNode(), error as JsonObject);
+						}
+
+						let errorItem;
+						type GraphError = {
+							message?: string;
+							code?: number;
+							error_subcode?: number;
+						};
+						type ErrorWithGraph = {
+							response?: {
+								body?: {
+									error?: GraphError;
+								};
+								headers?: IDataObject;
+							};
+							statusCode?: number;
+						};
+						const errorWithGraph = error as ErrorWithGraph;
+						if (errorWithGraph.response !== undefined) {
+							const graphApiErrors = errorWithGraph.response.body?.error ?? {};
+							errorItem = {
+								statusCode: errorWithGraph.statusCode,
+								...graphApiErrors,
+								headers: errorWithGraph.response.headers,
+							};
+						} else {
+							errorItem = error as IDataObject;
+						}
+						returnItems.push({ json: { ...errorItem }, pairedItem: { item: itemIndex } });
+						continue;
+					}
+				}
+
+				if (resource === 'igUser') {
+					const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
+					const accountId = this.getNodeParameter('node', itemIndex) as string;
+
+					try {
+						if (operation === 'get') {
+							const url = `https://${hostUrl}/${graphApiVersion}/${accountId}`;
+							const requestOptions: IHttpRequestOptions = {
+								headers: {
+									accept: 'application/json,text/*;q=0.99',
+								},
+								method: 'GET',
+								url,
+								qs: {
+									fields: [
+										'id',
+										'username',
+										'name',
+										'biography',
+										'website',
+										'media_count',
+										'followers_count',
+										'follows_count',
+										'profile_picture_url',
+									].join(','),
+								},
+								json: true,
+							};
+
+							const response = (await this.helpers.httpRequestWithAuthentication.call(
+								this,
+								'instagramApi',
+								requestOptions,
+							)) as IDataObject;
+
+							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
+							continue;
+						}
+
+						if (operation === 'getMedia') {
+							const returnAll = this.getNodeParameter('returnAll', itemIndex, false) as boolean;
+							const limit = this.getNodeParameter('limit', itemIndex, 0) as number;
+
+							const baseUrl = `https://${hostUrl}/${graphApiVersion}/${accountId}/media`;
+							const fields = [
+								'id',
+								'media_type',
+								'media_url',
+								'thumbnail_url',
+								'caption',
+								'permalink',
+								'timestamp',
+								'username',
+							].join(',');
+
+							const accumulated: IDataObject[] = [];
+							let after: string | undefined;
+
+							// Basic safety limit to avoid infinite loops when returnAll is true
+							const hardCap = returnAll ? 5000 : limit;
+
+							let hasMore = true;
+							while (hasMore) {
+								const remaining = returnAll ? undefined : hardCap - accumulated.length;
+								const pageLimit = remaining !== undefined ? Math.min(remaining, 100) : 100;
+
+								const qs: IDataObject = {
+									fields,
+									limit: pageLimit,
+								};
+
+								if (after) {
+									qs.after = after;
+								}
+
+								const requestOptions: IHttpRequestOptions = {
+									headers: {
+										accept: 'application/json,text/*;q=0.99',
+									},
+									method: 'GET',
+									url: baseUrl,
+									qs,
+									json: true,
+								};
+
+								const response = (await this.helpers.httpRequestWithAuthentication.call(
+									this,
+									'instagramApi',
+									requestOptions,
+								)) as IDataObject;
+
+								const pageData = (response.data as IDataObject[] | undefined) ?? [];
+								accumulated.push(...pageData);
+
+								const paging = response.paging as
+									| {
+											cursors?: { after?: string };
+									  }
+									| undefined;
+								after = paging?.cursors?.after;
+
+								if ((!returnAll && accumulated.length >= hardCap) || !after) {
+									hasMore = false;
+								}
+							}
+
+							// Trim just in case we fetched over the requested limit
+							const finalData = !returnAll && hardCap > 0 ? accumulated.slice(0, hardCap) : accumulated;
+
+							returnItems.push({ json: { data: finalData }, pairedItem: { item: itemIndex } });
+							continue;
+						}
+
+						throw new NodeOperationError(
+							this.getNode(),
+							`Unsupported IG User operation: ${operation}`,
+							{ itemIndex },
+						);
+					} catch (error) {
+						if (!this.continueOnFail()) {
+							throw new NodeApiError(this.getNode(), error as JsonObject);
+						}
+
+						let errorItem;
+						type GraphError = {
+							message?: string;
+							code?: number;
+							error_subcode?: number;
+						};
+						type ErrorWithGraph = {
+							response?: {
+								body?: {
+									error?: GraphError;
+								};
+								headers?: IDataObject;
+							};
+							statusCode?: number;
+						};
+						const errorWithGraph = error as ErrorWithGraph;
+						if (errorWithGraph.response !== undefined) {
+							const graphApiErrors = errorWithGraph.response.body?.error ?? {};
+							errorItem = {
+								statusCode: errorWithGraph.statusCode,
+								...graphApiErrors,
+								headers: errorWithGraph.response.headers,
+							};
+						} else {
+							errorItem = error as IDataObject;
+						}
+						returnItems.push({ json: { ...errorItem }, pairedItem: { item: itemIndex } });
+						continue;
+					}
+				}
 
 				if (resource === 'comments') {
 					const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;

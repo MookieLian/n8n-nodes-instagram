@@ -16,7 +16,28 @@ const commentResourceOption = {
     value: 'comments',
     description: 'Moderate comments on Instagram media',
 };
-exports.instagramResourceOptions = [...baseResourceOptions, commentResourceOption];
+const igUserResourceOption = {
+    name: 'IG User',
+    value: 'igUser',
+    description: 'Read data for an Instagram Business or Creator account',
+};
+const igHashtagResourceOption = {
+    name: 'IG Hashtag',
+    value: 'igHashtag',
+    description: 'Search hashtags and fetch top or recent media for a hashtag',
+};
+const messagingResourceOption = {
+    name: 'Messaging',
+    value: 'messaging',
+    description: 'Send direct messages via the Instagram Messaging API',
+};
+exports.instagramResourceOptions = [
+    ...baseResourceOptions,
+    commentResourceOption,
+    igUserResourceOption,
+    igHashtagResourceOption,
+    messagingResourceOption,
+];
 const fieldMap = new Map();
 for (const handler of Object.values(handlers)) {
     for (const field of handler.fields) {
