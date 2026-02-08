@@ -45,6 +45,11 @@ class Instagram {
                             description: 'Exchange and refresh Instagram access tokens; call /me',
                         },
                         {
+                            name: 'Carousel',
+                            value: 'carousel',
+                            description: 'Publish a carousel (album) post with up to 10 images or videos',
+                        },
+                        {
                             name: 'Comment',
                             value: 'comments',
                             description: 'Moderate comments on Instagram media',
@@ -100,6 +105,27 @@ class Instagram {
                             value: 'publish',
                             action: 'Publish',
                             description: 'Publish the selected media type (image, reel, or story) to Instagram',
+                        },
+                    ],
+                    default: 'publish',
+                    required: true,
+                },
+                {
+                    displayName: 'Operation',
+                    name: 'operation',
+                    type: 'options',
+                    noDataExpression: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['carousel'],
+                        },
+                    },
+                    options: [
+                        {
+                            name: 'Publish',
+                            value: 'publish',
+                            action: 'Publish',
+                            description: 'Publish a carousel (album) post with up to 10 images or videos',
                         },
                     ],
                     default: 'publish',
@@ -286,7 +312,7 @@ class Instagram {
                     required: true,
                     displayOptions: {
                         show: {
-                            resource: ['image', 'reels', 'stories', 'comments', 'igUser', 'igHashtag', 'messaging'],
+                            resource: ['image', 'reels', 'stories', 'carousel', 'comments', 'igUser', 'igHashtag', 'messaging'],
                             operation: ['publish', 'sendPrivateReply', 'get', 'getMedia', 'search', 'getRecentMedia', 'getTopMedia', 'sendMessage'],
                         },
                     },
@@ -350,7 +376,7 @@ class Instagram {
                     required: true,
                     displayOptions: {
                         show: {
-                            resource: ['image', 'reels', 'stories', 'comments', 'igUser', 'igHashtag', 'auth', 'messaging'],
+                            resource: ['image', 'reels', 'stories', 'carousel', 'comments', 'igUser', 'igHashtag', 'auth', 'messaging'],
                             operation: [
                                 'publish',
                                 'list',
@@ -516,10 +542,67 @@ class Instagram {
                     required: true,
                     displayOptions: {
                         show: {
-                            resource: ['image', 'reels', 'stories'],
+                            resource: ['image', 'reels', 'stories', 'carousel'],
                             operation: ['publish'],
                         },
                     },
+                },
+                {
+                    displayName: 'Carousel Media',
+                    name: 'carouselMedia',
+                    type: 'fixedCollection',
+                    typeOptions: {
+                        multipleValues: true,
+                        minValue: 2,
+                        maxValue: 10,
+                    },
+                    default: { mediaItem: [] },
+                    placeholder: 'Add media item',
+                    description: 'Up to 10 images or videos for the carousel. Order is preserved.',
+                    displayOptions: {
+                        show: {
+                            resource: ['carousel'],
+                            operation: ['publish'],
+                        },
+                    },
+                    options: [
+                        {
+                            displayName: 'Media Item',
+                            name: 'mediaItem',
+                            values: [
+                                {
+                                    displayName: 'Media Type',
+                                    name: 'mediaType',
+                                    type: 'options',
+                                    default: 'image',
+                                    options: [
+                                        { name: 'Image', value: 'image' },
+                                        { name: 'Video', value: 'video' },
+                                    ],
+                                },
+                                {
+                                    displayName: 'Image URL',
+                                    name: 'imageUrl',
+                                    type: 'string',
+                                    default: '',
+                                    description: 'URL of the image. Required when Media Type is Image.',
+                                    displayOptions: {
+                                        show: { mediaType: ['image'] },
+                                    },
+                                },
+                                {
+                                    displayName: 'Video URL',
+                                    name: 'videoUrl',
+                                    type: 'string',
+                                    default: '',
+                                    description: 'URL of the video. Required when Media Type is Video.',
+                                    displayOptions: {
+                                        show: { mediaType: ['video'] },
+                                    },
+                                },
+                            ],
+                        },
+                    ],
                 },
                 {
                     displayName: 'Additional Fields',
@@ -656,7 +739,7 @@ class Instagram {
         };
     }
     async execute() {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4;
         const items = this.getInputData();
         const returnItems = [];
         const hostUrl = 'graph.facebook.com';
@@ -851,6 +934,144 @@ class Instagram {
                         continue;
                     }
                 }
+                if (resource === 'carousel' && operation === 'publish') {
+                    const getCarouselErrorMessage = (error) => {
+                        var _a, _b, _c, _d;
+                        const e = error;
+                        const apiMsg = (_c = (_b = (_a = e === null || e === void 0 ? void 0 : e.response) === null || _a === void 0 ? void 0 : _a.body) === null || _b === void 0 ? void 0 : _b.error) === null || _c === void 0 ? void 0 : _c.message;
+                        return typeof apiMsg === 'string' ? apiMsg : (_d = e === null || e === void 0 ? void 0 : e.message) !== null && _d !== void 0 ? _d : String(error);
+                    };
+                    try {
+                        const node = this.getNodeParameter('node', itemIndex);
+                        const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
+                        const caption = this.getNodeParameter('caption', itemIndex);
+                        const carouselMedia = this.getNodeParameter('carouselMedia', itemIndex, { mediaItem: [] });
+                        const mediaItems = (_g = carouselMedia === null || carouselMedia === void 0 ? void 0 : carouselMedia.mediaItem) !== null && _g !== void 0 ? _g : [];
+                        if (mediaItems.length < 2 || mediaItems.length > 10) {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Carousel must have between 2 and 10 media items.', { itemIndex });
+                        }
+                        const pollIntervalMs = 1500;
+                        const maxPollAttempts = 20;
+                        const childIds = [];
+                        const mediaUri = `https://${hostUrl}/${graphApiVersion}/${node}/media`;
+                        for (let i = 0; i < mediaItems.length; i++) {
+                            const item = mediaItems[i];
+                            const isVideo = item.mediaType === 'video';
+                            const mediaLabel = `Carousel item ${i + 1} (${isVideo ? 'video' : 'image'})`;
+                            const url = isVideo ? ((_h = item.videoUrl) !== null && _h !== void 0 ? _h : '').trim() : ((_j = item.imageUrl) !== null && _j !== void 0 ? _j : '').trim();
+                            if (!url) {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${mediaLabel}: ${isVideo ? 'Video URL' : 'Image URL'} is required.`, { itemIndex });
+                            }
+                            const childQs = isVideo
+                                ? { media_type: 'VIDEO', video_url: url, is_carousel_item: true }
+                                : { image_url: url, is_carousel_item: true };
+                            const createChildOptions = {
+                                headers: { accept: 'application/json,text/*;q=0.99' },
+                                method: 'POST',
+                                url: mediaUri,
+                                qs: childQs,
+                                json: true,
+                            };
+                            let childResponse;
+                            try {
+                                childResponse = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', createChildOptions));
+                            }
+                            catch (err) {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${mediaLabel}: container creation failed — ${getCarouselErrorMessage(err)}`, { itemIndex });
+                            }
+                            const childId = childResponse.id;
+                            if (!childId) {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${mediaLabel}: container creation did not return an id.`, { itemIndex });
+                            }
+                            try {
+                                await waitForContainerReady({
+                                    creationId: childId,
+                                    hostUrl,
+                                    graphApiVersion,
+                                    itemIndex,
+                                    pollIntervalMs,
+                                    maxPollAttempts,
+                                });
+                            }
+                            catch (err) {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${mediaLabel}: container did not become ready — ${getCarouselErrorMessage(err)}`, { itemIndex });
+                            }
+                            childIds.push(childId);
+                        }
+                        const carouselQs = {
+                            media_type: 'CAROUSEL',
+                            children: childIds.join(','),
+                            caption,
+                        };
+                        const createCarouselOptions = {
+                            headers: { accept: 'application/json,text/*;q=0.99' },
+                            method: 'POST',
+                            url: mediaUri,
+                            qs: carouselQs,
+                            json: true,
+                        };
+                        let carouselResponse;
+                        try {
+                            carouselResponse = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', createCarouselOptions));
+                        }
+                        catch (err) {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Carousel container (create): ${getCarouselErrorMessage(err)}`, { itemIndex });
+                        }
+                        const carouselContainerId = carouselResponse.id;
+                        if (!carouselContainerId) {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Carousel container creation did not return an id.', { itemIndex });
+                        }
+                        try {
+                            await waitForContainerReady({
+                                creationId: carouselContainerId,
+                                hostUrl,
+                                graphApiVersion,
+                                itemIndex,
+                                pollIntervalMs,
+                                maxPollAttempts,
+                            });
+                        }
+                        catch (err) {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Carousel container (ready): ${getCarouselErrorMessage(err)}`, { itemIndex });
+                        }
+                        const publishUri = `https://${hostUrl}/${graphApiVersion}/${node}/media_publish`;
+                        const publishOptions = {
+                            headers: { accept: 'application/json,text/*;q=0.99' },
+                            method: 'POST',
+                            url: publishUri,
+                            qs: { creation_id: carouselContainerId },
+                            json: true,
+                        };
+                        let publishResponse;
+                        try {
+                            publishResponse = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', publishOptions));
+                        }
+                        catch (err) {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Carousel publish: ${getCarouselErrorMessage(err)}`, { itemIndex });
+                        }
+                        returnItems.push({ json: publishResponse, pairedItem: { item: itemIndex } });
+                        continue;
+                    }
+                    catch (error) {
+                        if (!this.continueOnFail()) {
+                            throw new n8n_workflow_1.NodeApiError(this.getNode(), error);
+                        }
+                        const errorWithGraph = error;
+                        const errorItem = errorWithGraph.response !== undefined
+                            ? {
+                                statusCode: errorWithGraph.statusCode,
+                                ...((_l = (_k = errorWithGraph.response.body) === null || _k === void 0 ? void 0 : _k.error) !== null && _l !== void 0 ? _l : {}),
+                                headers: errorWithGraph.response.headers,
+                            }
+                            : error;
+                        const contextMessage = error instanceof Error ? error.message : String((_m = error.message) !== null && _m !== void 0 ? _m : error);
+                        returnItems.push({
+                            json: { ...errorItem, carouselErrorContext: contextMessage },
+                            pairedItem: { item: itemIndex },
+                        });
+                        continue;
+                    }
+                }
                 if (resource === 'igHashtag') {
                     const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
                     const accountId = this.getNodeParameter('node', itemIndex);
@@ -915,10 +1136,10 @@ class Instagram {
                                     json: true,
                                 };
                                 const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
-                                const pageData = (_g = response.data) !== null && _g !== void 0 ? _g : [];
+                                const pageData = (_o = response.data) !== null && _o !== void 0 ? _o : [];
                                 accumulated.push(...pageData);
                                 const paging = response.paging;
-                                after = (_h = paging === null || paging === void 0 ? void 0 : paging.cursors) === null || _h === void 0 ? void 0 : _h.after;
+                                after = (_p = paging === null || paging === void 0 ? void 0 : paging.cursors) === null || _p === void 0 ? void 0 : _p.after;
                                 if ((!returnAll && accumulated.length >= hardCap) || !after) {
                                     hasMore = false;
                                 }
@@ -936,7 +1157,7 @@ class Instagram {
                         let errorItem;
                         const errorWithGraph = error;
                         if (errorWithGraph.response !== undefined) {
-                            const graphApiErrors = (_k = (_j = errorWithGraph.response.body) === null || _j === void 0 ? void 0 : _j.error) !== null && _k !== void 0 ? _k : {};
+                            const graphApiErrors = (_r = (_q = errorWithGraph.response.body) === null || _q === void 0 ? void 0 : _q.error) !== null && _r !== void 0 ? _r : {};
                             errorItem = {
                                 statusCode: errorWithGraph.statusCode,
                                 ...graphApiErrors,
@@ -1019,10 +1240,10 @@ class Instagram {
                                     json: true,
                                 };
                                 const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
-                                const pageData = (_l = response.data) !== null && _l !== void 0 ? _l : [];
+                                const pageData = (_s = response.data) !== null && _s !== void 0 ? _s : [];
                                 accumulated.push(...pageData);
                                 const paging = response.paging;
-                                after = (_m = paging === null || paging === void 0 ? void 0 : paging.cursors) === null || _m === void 0 ? void 0 : _m.after;
+                                after = (_t = paging === null || paging === void 0 ? void 0 : paging.cursors) === null || _t === void 0 ? void 0 : _t.after;
                                 if ((!returnAll && accumulated.length >= hardCap) || !after) {
                                     hasMore = false;
                                 }
@@ -1040,7 +1261,7 @@ class Instagram {
                         let errorItem;
                         const errorWithGraph = error;
                         if (errorWithGraph.response !== undefined) {
-                            const graphApiErrors = (_p = (_o = errorWithGraph.response.body) === null || _o === void 0 ? void 0 : _o.error) !== null && _p !== void 0 ? _p : {};
+                            const graphApiErrors = (_v = (_u = errorWithGraph.response.body) === null || _u === void 0 ? void 0 : _u.error) !== null && _v !== void 0 ? _v : {};
                             errorItem = {
                                 statusCode: errorWithGraph.statusCode,
                                 ...graphApiErrors,
@@ -1160,7 +1381,7 @@ class Instagram {
                         let errorItem;
                         const errorWithGraph = error;
                         if (errorWithGraph.response !== undefined) {
-                            const graphApiErrors = (_r = (_q = errorWithGraph.response.body) === null || _q === void 0 ? void 0 : _q.error) !== null && _r !== void 0 ? _r : {};
+                            const graphApiErrors = (_x = (_w = errorWithGraph.response.body) === null || _w === void 0 ? void 0 : _w.error) !== null && _x !== void 0 ? _x : {};
                             errorItem = {
                                 statusCode: errorWithGraph.statusCode,
                                 ...graphApiErrors,
@@ -1189,7 +1410,7 @@ class Instagram {
                 const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
                 const caption = this.getNodeParameter('caption', itemIndex);
                 const additionalFields = this.getNodeParameter('additionalFields', itemIndex, {});
-                const altText = (_s = additionalFields.altText) !== null && _s !== void 0 ? _s : '';
+                const altText = (_y = additionalFields.altText) !== null && _y !== void 0 ? _y : '';
                 const rawLocationId = additionalFields.locationId;
                 const userTagsCollection = additionalFields.userTags;
                 const productTagsCollection = additionalFields.productTags;
@@ -1267,7 +1488,7 @@ class Instagram {
                     let errorItem;
                     const err = error;
                     if (err.response !== undefined) {
-                        const graphApiErrors = (_u = (_t = err.response.body) === null || _t === void 0 ? void 0 : _t.error) !== null && _u !== void 0 ? _u : {};
+                        const graphApiErrors = (_0 = (_z = err.response.body) === null || _z === void 0 ? void 0 : _z.error) !== null && _0 !== void 0 ? _0 : {};
                         errorItem = {
                             statusCode: err.statusCode,
                             ...graphApiErrors,
@@ -1340,7 +1561,7 @@ class Instagram {
                         let errorItem;
                         const err = error;
                         if (err.response !== undefined) {
-                            const graphApiErrors = (_w = (_v = err.response.body) === null || _v === void 0 ? void 0 : _v.error) !== null && _w !== void 0 ? _w : {};
+                            const graphApiErrors = (_2 = (_1 = err.response.body) === null || _1 === void 0 ? void 0 : _1.error) !== null && _2 !== void 0 ? _2 : {};
                             errorItem = {
                                 statusCode: err.statusCode,
                                 ...graphApiErrors,
@@ -1381,7 +1602,7 @@ class Instagram {
                 let errorItem;
                 const errorWithGraph = error;
                 if (errorWithGraph.response !== undefined) {
-                    const graphApiErrors = (_y = (_x = errorWithGraph.response.body) === null || _x === void 0 ? void 0 : _x.error) !== null && _y !== void 0 ? _y : {};
+                    const graphApiErrors = (_4 = (_3 = errorWithGraph.response.body) === null || _3 === void 0 ? void 0 : _3.error) !== null && _4 !== void 0 ? _4 : {};
                     errorItem = {
                         statusCode: errorWithGraph.statusCode,
                         ...graphApiErrors,

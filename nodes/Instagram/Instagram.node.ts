@@ -53,6 +53,11 @@ export class Instagram implements INodeType {
 						description: 'Exchange and refresh Instagram access tokens; call /me',
 					},
 					{
+						name: 'Carousel',
+						value: 'carousel',
+						description: 'Publish a carousel (album) post with up to 10 images or videos',
+					},
+					{
 						name: 'Comment',
 						value: 'comments',
 						description: 'Moderate comments on Instagram media',
@@ -109,6 +114,27 @@ export class Instagram implements INodeType {
 						action: 'Publish',
 						description:
 							'Publish the selected media type (image, reel, or story) to Instagram',
+					},
+				],
+				default: 'publish',
+				required: true,
+			},
+			{
+				displayName: 'Operation',
+				name: 'operation',
+				type: 'options',
+				noDataExpression: true,
+				displayOptions: {
+					show: {
+						resource: ['carousel'],
+					},
+				},
+				options: [
+					{
+						name: 'Publish',
+						value: 'publish',
+						action: 'Publish',
+						description: 'Publish a carousel (album) post with up to 10 images or videos',
 					},
 				],
 				default: 'publish',
@@ -299,7 +325,7 @@ export class Instagram implements INodeType {
 				required: true,
 				displayOptions: {
 					show: {
-						resource: ['image', 'reels', 'stories', 'comments', 'igUser', 'igHashtag', 'messaging'],
+						resource: ['image', 'reels', 'stories', 'carousel', 'comments', 'igUser', 'igHashtag', 'messaging'],
 						operation: ['publish', 'sendPrivateReply', 'get', 'getMedia', 'search', 'getRecentMedia', 'getTopMedia', 'sendMessage'],
 					},
 				},
@@ -366,7 +392,7 @@ export class Instagram implements INodeType {
 				required: true,
 				displayOptions: {
 					show: {
-						resource: ['image', 'reels', 'stories', 'comments', 'igUser', 'igHashtag', 'auth', 'messaging'],
+						resource: ['image', 'reels', 'stories', 'carousel', 'comments', 'igUser', 'igHashtag', 'auth', 'messaging'],
 						operation: [
 							'publish',
 							'list',
@@ -533,10 +559,67 @@ export class Instagram implements INodeType {
 				required: true,
 				displayOptions: {
 					show: {
-						resource: ['image', 'reels', 'stories'],
+						resource: ['image', 'reels', 'stories', 'carousel'],
 						operation: ['publish'],
 					},
 				},
+			},
+			{
+				displayName: 'Carousel Media',
+				name: 'carouselMedia',
+				type: 'fixedCollection',
+				typeOptions: {
+					multipleValues: true,
+					minValue: 2,
+					maxValue: 10,
+				},
+				default: { mediaItem: [] },
+				placeholder: 'Add media item',
+				description: 'Up to 10 images or videos for the carousel. Order is preserved.',
+				displayOptions: {
+					show: {
+						resource: ['carousel'],
+						operation: ['publish'],
+					},
+				},
+				options: [
+					{
+						displayName: 'Media Item',
+						name: 'mediaItem',
+						values: [
+							{
+								displayName: 'Media Type',
+								name: 'mediaType',
+								type: 'options',
+								default: 'image',
+								options: [
+									{ name: 'Image', value: 'image' },
+									{ name: 'Video', value: 'video' },
+								],
+							},
+							{
+								displayName: 'Image URL',
+								name: 'imageUrl',
+								type: 'string',
+								default: '',
+								description: 'URL of the image. Required when Media Type is Image.',
+								displayOptions: {
+									show: { mediaType: ['image'] },
+								},
+							},
+							{
+								displayName: 'Video URL',
+								name: 'videoUrl',
+								type: 'string',
+								default: '',
+								description: 'URL of the video. Required when Media Type is Video.',
+								displayOptions: {
+									show: { mediaType: ['video'] },
+								},
+							},
+						],
+					},
+				],
 			},
 			{
 				displayName: 'Additional Fields',
@@ -1006,6 +1089,204 @@ export class Instagram implements INodeType {
 							errorItem = error as IDataObject;
 						}
 						returnItems.push({ json: { ...errorItem }, pairedItem: { item: itemIndex } });
+						continue;
+					}
+				}
+
+				if (resource === 'carousel' && operation === 'publish') {
+					const getCarouselErrorMessage = (error: unknown): string => {
+						type GraphError = { message?: string };
+						type Err = { response?: { body?: { error?: GraphError } }; message?: string };
+						const e = error as Err;
+						const apiMsg = e?.response?.body?.error?.message;
+						return typeof apiMsg === 'string' ? apiMsg : (e?.message as string) ?? String(error);
+					};
+					try {
+						const node = this.getNodeParameter('node', itemIndex) as string;
+						const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
+						const caption = this.getNodeParameter('caption', itemIndex) as string;
+						const carouselMedia = this.getNodeParameter('carouselMedia', itemIndex, { mediaItem: [] }) as {
+							mediaItem?: Array<{ mediaType: string; imageUrl?: string; videoUrl?: string }>;
+						};
+						const mediaItems = carouselMedia?.mediaItem ?? [];
+						if (mediaItems.length < 2 || mediaItems.length > 10) {
+							throw new NodeOperationError(
+								this.getNode(),
+								'Carousel must have between 2 and 10 media items.',
+								{ itemIndex },
+							);
+						}
+						const pollIntervalMs = 1500;
+						const maxPollAttempts = 20;
+						const childIds: string[] = [];
+						const mediaUri = `https://${hostUrl}/${graphApiVersion}/${node}/media`;
+						for (let i = 0; i < mediaItems.length; i++) {
+							const item = mediaItems[i];
+							const isVideo = item.mediaType === 'video';
+							const mediaLabel = `Carousel item ${i + 1} (${isVideo ? 'video' : 'image'})`;
+							const url = isVideo ? (item.videoUrl ?? '').trim() : (item.imageUrl ?? '').trim();
+							if (!url) {
+								throw new NodeOperationError(
+									this.getNode(),
+									`${mediaLabel}: ${isVideo ? 'Video URL' : 'Image URL'} is required.`,
+									{ itemIndex },
+								);
+							}
+							const childQs: IDataObject = isVideo
+								? { media_type: 'VIDEO', video_url: url, is_carousel_item: true }
+								: { image_url: url, is_carousel_item: true };
+							const createChildOptions: IHttpRequestOptions = {
+								headers: { accept: 'application/json,text/*;q=0.99' },
+								method: 'POST',
+								url: mediaUri,
+								qs: childQs,
+								json: true,
+							};
+							let childResponse: IDataObject;
+							try {
+								childResponse = (await this.helpers.httpRequestWithAuthentication.call(
+									this,
+									'instagramApi',
+									createChildOptions,
+								)) as IDataObject;
+							} catch (err) {
+								throw new NodeOperationError(
+									this.getNode(),
+									`${mediaLabel}: container creation failed — ${getCarouselErrorMessage(err)}`,
+									{ itemIndex },
+								);
+							}
+							const childId = childResponse.id as string | undefined;
+							if (!childId) {
+								throw new NodeOperationError(
+									this.getNode(),
+									`${mediaLabel}: container creation did not return an id.`,
+									{ itemIndex },
+								);
+							}
+							try {
+								await waitForContainerReady({
+									creationId: childId,
+									hostUrl,
+									graphApiVersion,
+									itemIndex,
+									pollIntervalMs,
+									maxPollAttempts,
+								});
+							} catch (err) {
+								throw new NodeOperationError(
+									this.getNode(),
+									`${mediaLabel}: container did not become ready — ${getCarouselErrorMessage(err)}`,
+									{ itemIndex },
+								);
+							}
+							childIds.push(childId);
+						}
+						const carouselQs: IDataObject = {
+							media_type: 'CAROUSEL',
+							children: childIds.join(','),
+							caption,
+						};
+						const createCarouselOptions: IHttpRequestOptions = {
+							headers: { accept: 'application/json,text/*;q=0.99' },
+							method: 'POST',
+							url: mediaUri,
+							qs: carouselQs,
+							json: true,
+						};
+						let carouselResponse: IDataObject;
+						try {
+							carouselResponse = (await this.helpers.httpRequestWithAuthentication.call(
+								this,
+								'instagramApi',
+								createCarouselOptions,
+							)) as IDataObject;
+						} catch (err) {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Carousel container (create): ${getCarouselErrorMessage(err)}`,
+								{ itemIndex },
+							);
+						}
+						const carouselContainerId = carouselResponse.id as string | undefined;
+						if (!carouselContainerId) {
+							throw new NodeOperationError(
+								this.getNode(),
+								'Carousel container creation did not return an id.',
+								{ itemIndex },
+							);
+						}
+						try {
+							await waitForContainerReady({
+								creationId: carouselContainerId,
+								hostUrl,
+								graphApiVersion,
+								itemIndex,
+								pollIntervalMs,
+								maxPollAttempts,
+							});
+						} catch (err) {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Carousel container (ready): ${getCarouselErrorMessage(err)}`,
+								{ itemIndex },
+							);
+						}
+						const publishUri = `https://${hostUrl}/${graphApiVersion}/${node}/media_publish`;
+						const publishOptions: IHttpRequestOptions = {
+							headers: { accept: 'application/json,text/*;q=0.99' },
+							method: 'POST',
+							url: publishUri,
+							qs: { creation_id: carouselContainerId },
+							json: true,
+						};
+						let publishResponse: IDataObject;
+						try {
+							publishResponse = (await this.helpers.httpRequestWithAuthentication.call(
+								this,
+								'instagramApi',
+								publishOptions,
+							)) as IDataObject;
+						} catch (err) {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Carousel publish: ${getCarouselErrorMessage(err)}`,
+								{ itemIndex },
+							);
+						}
+						returnItems.push({ json: publishResponse, pairedItem: { item: itemIndex } });
+						continue;
+					} catch (error) {
+						if (!this.continueOnFail()) {
+							throw new NodeApiError(this.getNode(), error as JsonObject);
+						}
+						type GraphError = {
+							message?: string;
+							code?: number;
+							error_subcode?: number;
+						};
+						type ErrorWithGraph = {
+							response?: {
+								body?: { error?: GraphError };
+								headers?: IDataObject;
+							};
+							statusCode?: number;
+						};
+						const errorWithGraph = error as ErrorWithGraph;
+						const errorItem =
+							errorWithGraph.response !== undefined
+								? {
+										statusCode: errorWithGraph.statusCode,
+										...(errorWithGraph.response.body?.error ?? {}),
+										headers: errorWithGraph.response.headers,
+									}
+								: (error as IDataObject);
+						const contextMessage =
+							error instanceof Error ? error.message : String((error as IDataObject).message ?? error);
+						returnItems.push({
+							json: { ...errorItem, carouselErrorContext: contextMessage },
+							pairedItem: { item: itemIndex },
+						});
 						continue;
 					}
 				}
