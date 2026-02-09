@@ -129,7 +129,7 @@ class Instagram {
                         {
                             name: 'Get Instagram Account',
                             value: 'getInstagramAccount',
-                            action: 'Get Instagram account',
+                            action: 'Get instagram account',
                             description: 'Get the Instagram business/creator account connected to a Facebook Page',
                         },
                     ],
@@ -673,57 +673,6 @@ class Instagram {
                             description: 'Facebook Page ID for a location to tag. Use Pages Search API to find location pages. Image and Reels only; not supported for Stories.',
                         },
                         {
-                            displayName: 'User Tags',
-                            name: 'userTags',
-                            type: 'fixedCollection',
-                            typeOptions: {
-                                multipleValues: true,
-                            },
-                            placeholder: 'Add User Tag',
-                            default: {},
-                            description: 'Users to tag in the media. username required; x and y coordinates (0–1) required for images, optional for stories. Supported for Image, Reels, and Stories.',
-                            options: [
-                                {
-                                    displayName: 'Tag',
-                                    name: 'tag',
-                                    values: [
-                                        {
-                                            displayName: 'Username',
-                                            name: 'username',
-                                            type: 'string',
-                                            default: '',
-                                            description: 'Instagram username to tag (without @)',
-                                            required: true,
-                                        },
-                                        {
-                                            displayName: 'X Position',
-                                            name: 'x',
-                                            type: 'number',
-                                            typeOptions: {
-                                                minValue: 0,
-                                                maxValue: 1,
-                                                numberStepSize: 0.01,
-                                            },
-                                            default: 0.5,
-                                            description: 'Horizontal position (0–1). Required for images, optional for stories. 0 = left edge, 1 = right edge',
-                                        },
-                                        {
-                                            displayName: 'Y Position',
-                                            name: 'y',
-                                            type: 'number',
-                                            typeOptions: {
-                                                minValue: 0,
-                                                maxValue: 1,
-                                                numberStepSize: 0.01,
-                                            },
-                                            default: 0.5,
-                                            description: 'Vertical position (0–1). Required for images, optional for stories. 0 = top edge, 1 = bottom edge',
-                                        },
-                                    ],
-                                },
-                            ],
-                        },
-                        {
                             displayName: 'Product Tags',
                             name: 'productTags',
                             type: 'fixedCollection',
@@ -778,18 +727,69 @@ class Instagram {
                             displayName: 'Trial Reel - Graduation Strategy',
                             name: 'trialReelGraduationStrategy',
                             type: 'options',
-                            default: '',
+                            default: 'MANUAL',
                             description: 'Configure Trial Reels graduation strategy. Applies only to Reels; ignored for Images and Stories.',
                             options: [
                                 {
                                     name: 'Manual',
                                     value: 'MANUAL',
-                                    description: 'You manually decide in the Instagram app when (or if) to graduate the trial reel.',
+                                    description: 'You manually decide in the Instagram app when (or if) to graduate the trial reel',
                                 },
                                 {
                                     name: 'Performance-Based (SS_PERFORMANCE)',
                                     value: 'SS_PERFORMANCE',
-                                    description: 'Instagram automatically graduates the trial reel if it performs well with non-followers.',
+                                    description: 'Instagram automatically graduates the trial reel if it performs well with non-followers',
+                                },
+                            ],
+                        },
+                        {
+                            displayName: 'User Tags',
+                            name: 'userTags',
+                            type: 'fixedCollection',
+                            typeOptions: {
+                                multipleValues: true,
+                            },
+                            placeholder: 'Add User Tag',
+                            default: {},
+                            description: 'Users to tag in the media. username required; x and y coordinates (0–1) required for images, optional for stories. Supported for Image, Reels, and Stories.',
+                            options: [
+                                {
+                                    displayName: 'Tag',
+                                    name: 'tag',
+                                    values: [
+                                        {
+                                            displayName: 'Username',
+                                            name: 'username',
+                                            type: 'string',
+                                            default: '',
+                                            description: 'Instagram username to tag (without @)',
+                                            required: true,
+                                        },
+                                        {
+                                            displayName: 'X Position',
+                                            name: 'x',
+                                            type: 'number',
+                                            typeOptions: {
+                                                minValue: 0,
+                                                maxValue: 1,
+                                                numberStepSize: 0.01,
+                                            },
+                                            default: 0.5,
+                                            description: 'Horizontal position (0–1). Required for images, optional for stories. 0 = left edge, 1 = right edge',
+                                        },
+                                        {
+                                            displayName: 'Y Position',
+                                            name: 'y',
+                                            type: 'number',
+                                            typeOptions: {
+                                                minValue: 0,
+                                                maxValue: 1,
+                                                numberStepSize: 0.01,
+                                            },
+                                            default: 0.5,
+                                            description: 'Vertical position (0–1). Required for images, optional for stories. 0 = top edge, 1 = bottom edge',
+                                        },
+                                    ],
                                 },
                             ],
                         },
