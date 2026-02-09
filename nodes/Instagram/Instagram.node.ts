@@ -83,6 +83,11 @@ export class Instagram implements INodeType {
 						description: 'Send direct messages via the Instagram Messaging API',
 					},
 					{
+						name: 'Page',
+						value: 'page',
+						description: 'Work with the connected Facebook Page and its Instagram account',
+					},
+					{
 						name: 'Reel',
 						value: 'reels',
 						description: 'Publish Reels videos to Instagram',
@@ -117,6 +122,27 @@ export class Instagram implements INodeType {
 					},
 				],
 				default: 'publish',
+				required: true,
+			},
+			{
+				displayName: 'Operation',
+				name: 'operation',
+				type: 'options',
+				noDataExpression: true,
+				displayOptions: {
+					show: {
+						resource: ['page'],
+					},
+				},
+				options: [
+					{
+						name: 'Get Instagram Account',
+						value: 'getInstagramAccount',
+						action: 'Get Instagram account',
+						description: 'Get the Instagram business/creator account connected to a Facebook Page',
+					},
+				],
+				default: 'getInstagramAccount',
 				required: true,
 			},
 			{
@@ -392,7 +418,7 @@ export class Instagram implements INodeType {
 				required: true,
 				displayOptions: {
 					show: {
-						resource: ['image', 'reels', 'stories', 'carousel', 'comments', 'igUser', 'igHashtag', 'auth', 'messaging'],
+						resource: ['image', 'reels', 'stories', 'carousel', 'comments', 'igUser', 'igHashtag', 'auth', 'messaging', 'page'],
 						operation: [
 							'publish',
 							'list',
@@ -409,6 +435,7 @@ export class Instagram implements INodeType {
 							'getMe',
 							'sendMessage',
 							'sendPrivateReply',
+							'getInstagramAccount',
 						],
 					},
 				},
@@ -456,6 +483,21 @@ export class Instagram implements INodeType {
 					show: {
 						resource: ['messaging'],
 						operation: ['sendMessage'],
+					},
+				},
+			},
+			{
+				displayName: 'Page ID',
+				name: 'pageId',
+				type: 'string',
+				default: '',
+				description:
+					'The Facebook Page ID that is connected to an Instagram business or creator account',
+				required: true,
+				displayOptions: {
+					show: {
+						resource: ['page'],
+						operation: ['getInstagramAccount'],
 					},
 				},
 			},
@@ -754,6 +796,28 @@ export class Instagram implements INodeType {
 											'Vertical position (0–1). Optional. 0 = top edge, 1 = bottom edge',
 									},
 								],
+							},
+						],
+					},
+					{
+						displayName: 'Trial Reel - Graduation Strategy',
+						name: 'trialReelGraduationStrategy',
+						type: 'options',
+						default: '',
+						description:
+							'Configure Trial Reels graduation strategy. Applies only to Reels; ignored for Images and Stories.',
+						options: [
+							{
+								name: 'Manual',
+								value: 'MANUAL',
+								description:
+									'You manually decide in the Instagram app when (or if) to graduate the trial reel.',
+							},
+							{
+								name: 'Performance-Based (SS_PERFORMANCE)',
+								value: 'SS_PERFORMANCE',
+								description:
+									'Instagram automatically graduates the trial reel if it performs well with non-followers.',
 							},
 						],
 					},
@@ -1441,6 +1505,76 @@ export class Instagram implements INodeType {
 					}
 				}
 
+				if (resource === 'page') {
+					const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
+					const pageId = this.getNodeParameter('pageId', itemIndex) as string;
+
+					try {
+						if (operation === 'getInstagramAccount') {
+							const url = `https://${hostUrl}/${graphApiVersion}/${pageId}`;
+							const requestOptions: IHttpRequestOptions = {
+								headers: {
+									accept: 'application/json,text/*;q=0.99',
+								},
+								method: 'GET',
+								url,
+								qs: {
+									fields: 'instagram_business_account',
+								},
+								json: true,
+							};
+
+							const response = (await this.helpers.httpRequestWithAuthentication.call(
+								this,
+								'instagramApi',
+								requestOptions,
+							)) as IDataObject;
+
+							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
+							continue;
+						}
+
+						throw new NodeOperationError(
+							this.getNode(),
+							`Unsupported page operation: ${operation}`,
+							{ itemIndex },
+						);
+					} catch (error) {
+						if (!this.continueOnFail()) {
+							throw new NodeApiError(this.getNode(), error as JsonObject);
+						}
+
+						let errorItem;
+						type GraphError = {
+							message?: string;
+							code?: number;
+							error_subcode?: number;
+						};
+						type ErrorWithGraph = {
+							response?: {
+								body?: {
+									error?: GraphError;
+								};
+								headers?: IDataObject;
+							};
+							statusCode?: number;
+						};
+						const errorWithGraph = error as ErrorWithGraph;
+						if (errorWithGraph.response !== undefined) {
+							const graphApiErrors = errorWithGraph.response.body?.error ?? {};
+							errorItem = {
+								statusCode: errorWithGraph.statusCode,
+								...graphApiErrors,
+								headers: errorWithGraph.response.headers,
+							};
+						} else {
+							errorItem = error as IDataObject;
+						}
+						returnItems.push({ json: { ...errorItem }, pairedItem: { item: itemIndex } });
+						continue;
+					}
+				}
+
 				if (resource === 'igUser') {
 					const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
 					const accountId = this.getNodeParameter('node', itemIndex) as string;
@@ -1859,6 +1993,20 @@ export class Instagram implements INodeType {
 					if (productTags.length > 0) {
 						mediaQs.product_tags = JSON.stringify(productTags);
 					}
+				}
+
+				const graduationStrategy = additionalFields.trialReelGraduationStrategy as string | undefined;
+				if (graduationStrategy) {
+					if (resource !== 'reels') {
+						throw new NodeOperationError(
+							this.getNode(),
+							'Trial Reels are only supported for the Reels resource. Remove Trial Reel options or switch the resource to Reels.',
+							{ itemIndex },
+						);
+					}
+					mediaQs.trial_params = JSON.stringify({
+						graduation_strategy: graduationStrategy,
+					});
 				}
 
 				const mediaRequestOptions: IHttpRequestOptions = {

@@ -75,6 +75,11 @@ class Instagram {
                             description: 'Send direct messages via the Instagram Messaging API',
                         },
                         {
+                            name: 'Page',
+                            value: 'page',
+                            description: 'Work with the connected Facebook Page and its Instagram account',
+                        },
+                        {
                             name: 'Reel',
                             value: 'reels',
                             description: 'Publish Reels videos to Instagram',
@@ -108,6 +113,27 @@ class Instagram {
                         },
                     ],
                     default: 'publish',
+                    required: true,
+                },
+                {
+                    displayName: 'Operation',
+                    name: 'operation',
+                    type: 'options',
+                    noDataExpression: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['page'],
+                        },
+                    },
+                    options: [
+                        {
+                            name: 'Get Instagram Account',
+                            value: 'getInstagramAccount',
+                            action: 'Get Instagram account',
+                            description: 'Get the Instagram business/creator account connected to a Facebook Page',
+                        },
+                    ],
+                    default: 'getInstagramAccount',
                     required: true,
                 },
                 {
@@ -376,7 +402,7 @@ class Instagram {
                     required: true,
                     displayOptions: {
                         show: {
-                            resource: ['image', 'reels', 'stories', 'carousel', 'comments', 'igUser', 'igHashtag', 'auth', 'messaging'],
+                            resource: ['image', 'reels', 'stories', 'carousel', 'comments', 'igUser', 'igHashtag', 'auth', 'messaging', 'page'],
                             operation: [
                                 'publish',
                                 'list',
@@ -393,6 +419,7 @@ class Instagram {
                                 'getMe',
                                 'sendMessage',
                                 'sendPrivateReply',
+                                'getInstagramAccount',
                             ],
                         },
                     },
@@ -439,6 +466,20 @@ class Instagram {
                         show: {
                             resource: ['messaging'],
                             operation: ['sendMessage'],
+                        },
+                    },
+                },
+                {
+                    displayName: 'Page ID',
+                    name: 'pageId',
+                    type: 'string',
+                    default: '',
+                    description: 'The Facebook Page ID that is connected to an Instagram business or creator account',
+                    required: true,
+                    displayOptions: {
+                        show: {
+                            resource: ['page'],
+                            operation: ['getInstagramAccount'],
                         },
                     },
                 },
@@ -733,13 +774,32 @@ class Instagram {
                                 },
                             ],
                         },
+                        {
+                            displayName: 'Trial Reel - Graduation Strategy',
+                            name: 'trialReelGraduationStrategy',
+                            type: 'options',
+                            default: '',
+                            description: 'Configure Trial Reels graduation strategy. Applies only to Reels; ignored for Images and Stories.',
+                            options: [
+                                {
+                                    name: 'Manual',
+                                    value: 'MANUAL',
+                                    description: 'You manually decide in the Instagram app when (or if) to graduate the trial reel.',
+                                },
+                                {
+                                    name: 'Performance-Based (SS_PERFORMANCE)',
+                                    value: 'SS_PERFORMANCE',
+                                    description: 'Instagram automatically graduates the trial reel if it performs well with non-followers.',
+                                },
+                            ],
+                        },
                     ],
                 },
             ],
         };
     }
     async execute() {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6;
         const items = this.getInputData();
         const returnItems = [];
         const hostUrl = 'graph.facebook.com';
@@ -1171,6 +1231,50 @@ class Instagram {
                         continue;
                     }
                 }
+                if (resource === 'page') {
+                    const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
+                    const pageId = this.getNodeParameter('pageId', itemIndex);
+                    try {
+                        if (operation === 'getInstagramAccount') {
+                            const url = `https://${hostUrl}/${graphApiVersion}/${pageId}`;
+                            const requestOptions = {
+                                headers: {
+                                    accept: 'application/json,text/*;q=0.99',
+                                },
+                                method: 'GET',
+                                url,
+                                qs: {
+                                    fields: 'instagram_business_account',
+                                },
+                                json: true,
+                            };
+                            const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                            returnItems.push({ json: response, pairedItem: { item: itemIndex } });
+                            continue;
+                        }
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Unsupported page operation: ${operation}`, { itemIndex });
+                    }
+                    catch (error) {
+                        if (!this.continueOnFail()) {
+                            throw new n8n_workflow_1.NodeApiError(this.getNode(), error);
+                        }
+                        let errorItem;
+                        const errorWithGraph = error;
+                        if (errorWithGraph.response !== undefined) {
+                            const graphApiErrors = (_t = (_s = errorWithGraph.response.body) === null || _s === void 0 ? void 0 : _s.error) !== null && _t !== void 0 ? _t : {};
+                            errorItem = {
+                                statusCode: errorWithGraph.statusCode,
+                                ...graphApiErrors,
+                                headers: errorWithGraph.response.headers,
+                            };
+                        }
+                        else {
+                            errorItem = error;
+                        }
+                        returnItems.push({ json: { ...errorItem }, pairedItem: { item: itemIndex } });
+                        continue;
+                    }
+                }
                 if (resource === 'igUser') {
                     const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
                     const accountId = this.getNodeParameter('node', itemIndex);
@@ -1240,10 +1344,10 @@ class Instagram {
                                     json: true,
                                 };
                                 const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
-                                const pageData = (_s = response.data) !== null && _s !== void 0 ? _s : [];
+                                const pageData = (_u = response.data) !== null && _u !== void 0 ? _u : [];
                                 accumulated.push(...pageData);
                                 const paging = response.paging;
-                                after = (_t = paging === null || paging === void 0 ? void 0 : paging.cursors) === null || _t === void 0 ? void 0 : _t.after;
+                                after = (_v = paging === null || paging === void 0 ? void 0 : paging.cursors) === null || _v === void 0 ? void 0 : _v.after;
                                 if ((!returnAll && accumulated.length >= hardCap) || !after) {
                                     hasMore = false;
                                 }
@@ -1261,7 +1365,7 @@ class Instagram {
                         let errorItem;
                         const errorWithGraph = error;
                         if (errorWithGraph.response !== undefined) {
-                            const graphApiErrors = (_v = (_u = errorWithGraph.response.body) === null || _u === void 0 ? void 0 : _u.error) !== null && _v !== void 0 ? _v : {};
+                            const graphApiErrors = (_x = (_w = errorWithGraph.response.body) === null || _w === void 0 ? void 0 : _w.error) !== null && _x !== void 0 ? _x : {};
                             errorItem = {
                                 statusCode: errorWithGraph.statusCode,
                                 ...graphApiErrors,
@@ -1381,7 +1485,7 @@ class Instagram {
                         let errorItem;
                         const errorWithGraph = error;
                         if (errorWithGraph.response !== undefined) {
-                            const graphApiErrors = (_x = (_w = errorWithGraph.response.body) === null || _w === void 0 ? void 0 : _w.error) !== null && _x !== void 0 ? _x : {};
+                            const graphApiErrors = (_z = (_y = errorWithGraph.response.body) === null || _y === void 0 ? void 0 : _y.error) !== null && _z !== void 0 ? _z : {};
                             errorItem = {
                                 statusCode: errorWithGraph.statusCode,
                                 ...graphApiErrors,
@@ -1410,7 +1514,7 @@ class Instagram {
                 const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
                 const caption = this.getNodeParameter('caption', itemIndex);
                 const additionalFields = this.getNodeParameter('additionalFields', itemIndex, {});
-                const altText = (_y = additionalFields.altText) !== null && _y !== void 0 ? _y : '';
+                const altText = (_0 = additionalFields.altText) !== null && _0 !== void 0 ? _0 : '';
                 const rawLocationId = additionalFields.locationId;
                 const userTagsCollection = additionalFields.userTags;
                 const productTagsCollection = additionalFields.productTags;
@@ -1468,6 +1572,15 @@ class Instagram {
                         mediaQs.product_tags = JSON.stringify(productTags);
                     }
                 }
+                const graduationStrategy = additionalFields.trialReelGraduationStrategy;
+                if (graduationStrategy) {
+                    if (resource !== 'reels') {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Trial Reels are only supported for the Reels resource. Remove Trial Reel options or switch the resource to Reels.', { itemIndex });
+                    }
+                    mediaQs.trial_params = JSON.stringify({
+                        graduation_strategy: graduationStrategy,
+                    });
+                }
                 const mediaRequestOptions = {
                     headers: {
                         accept: 'application/json,text/*;q=0.99',
@@ -1488,7 +1601,7 @@ class Instagram {
                     let errorItem;
                     const err = error;
                     if (err.response !== undefined) {
-                        const graphApiErrors = (_0 = (_z = err.response.body) === null || _z === void 0 ? void 0 : _z.error) !== null && _0 !== void 0 ? _0 : {};
+                        const graphApiErrors = (_2 = (_1 = err.response.body) === null || _1 === void 0 ? void 0 : _1.error) !== null && _2 !== void 0 ? _2 : {};
                         errorItem = {
                             statusCode: err.statusCode,
                             ...graphApiErrors,
@@ -1561,7 +1674,7 @@ class Instagram {
                         let errorItem;
                         const err = error;
                         if (err.response !== undefined) {
-                            const graphApiErrors = (_2 = (_1 = err.response.body) === null || _1 === void 0 ? void 0 : _1.error) !== null && _2 !== void 0 ? _2 : {};
+                            const graphApiErrors = (_4 = (_3 = err.response.body) === null || _3 === void 0 ? void 0 : _3.error) !== null && _4 !== void 0 ? _4 : {};
                             errorItem = {
                                 statusCode: err.statusCode,
                                 ...graphApiErrors,
@@ -1602,7 +1715,7 @@ class Instagram {
                 let errorItem;
                 const errorWithGraph = error;
                 if (errorWithGraph.response !== undefined) {
-                    const graphApiErrors = (_4 = (_3 = errorWithGraph.response.body) === null || _3 === void 0 ? void 0 : _3.error) !== null && _4 !== void 0 ? _4 : {};
+                    const graphApiErrors = (_6 = (_5 = errorWithGraph.response.body) === null || _5 === void 0 ? void 0 : _5.error) !== null && _6 !== void 0 ? _6 : {};
                     errorItem = {
                         statusCode: errorWithGraph.statusCode,
                         ...graphApiErrors,
