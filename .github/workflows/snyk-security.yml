@@ -76,10 +76,10 @@ jobs:
 #      - name: Build a Docker image
 #        run: docker build -t your/image-to-test .
         # Runs Snyk Container (Container and SCA) analysis and uploads result to Snyk.
-      - name: Snyk Container monitor
-        run: snyk container monitor your/image-to-test --file=Dockerfile
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+#      - name: Snyk Container monitor
+#        run: snyk container monitor your/image-to-test --file=Dockerfile
+#        env:
+#          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         # Push the Snyk Code results into GitHub Code Scanning tab
       - name: Upload result to GitHub Code Scanning
         uses: github/codeql-action/upload-sarif@v3
