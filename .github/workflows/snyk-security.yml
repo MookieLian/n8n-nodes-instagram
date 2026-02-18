@@ -36,6 +36,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Authenticate Snyk
+        run: snyk auth ${{ secrets.SNYK_TOKEN }}
+          
       - name: Set up Snyk CLI to check for security issues
         # Snyk can be used to break the build when it detects security issues.
         # In this case we want to upload the SAST issues to GitHub Code Scanning
@@ -61,7 +64,8 @@ jobs:
         # Runs Snyk Open Source (SCA) analysis and uploads result to Snyk.
       - name: Snyk Open Source monitor
         run: snyk monitor --all-projects
-
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         # Runs Snyk Infrastructure as Code (IaC) analysis and uploads result to Snyk.
         # Use || true to not fail the pipeline.
       - name: Snyk IaC test and report
