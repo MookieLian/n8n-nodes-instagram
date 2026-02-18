@@ -38,6 +38,7 @@
     ]
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@n8n/node-cli": "*",
     "@types/estree": "^1.0.8",
     "@types/json-schema": "^7.0.15",
