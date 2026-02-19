@@ -1,16 +1,11 @@
 {
     "name": "@mookielianhd/n8n-nodes-instagram",
-    "version": "2.5.2",
+    "version": "2.5.3",
     "description": "Instagram node for n8n",
     "license": "MIT",
     "homepage": "",
-    "keywords": [
-        "n8n-community-node-package"
-    ],
-    "author": {
-        "name": "MookieLian",
-        "email": "mookielianhd@gmail.com"
-    },
+    "keywords": ["n8n-community-node-package"],
+    "author": { "name": "MookieLian", "email": "mookielianhd@gmail.com" },
     "repository": {
         "type": "git",
         "url": "git+https://github.com/MookieLian/n8n-nodes-instagram.git"
@@ -24,29 +19,27 @@
         "release": "n8n-node release",
         "prepublishOnly": "n8n-node prerelease"
     },
-    "files": [
-        "dist"
-    ],
+    "files": ["dist"],
     "n8n": {
         "n8nNodesApiVersion": 1,
         "strict": true,
-        "nodes": [
-            "dist/nodes/Instagram/Instagram.node.js"
-        ],
-        "credentials": [
-            "dist/credentials/InstagramApi.credentials.js"
-        ]
+        "nodes": ["dist/nodes/Instagram/Instagram.node.js"],
+        "credentials": ["dist/credentials/InstagramApi.credentials.js"]
     },
     "devDependencies": {
+        "@eslint/js": "^10.0.1",
         "@n8n/node-cli": "*",
         "@types/estree": "^1.0.8",
         "@types/json-schema": "^7.0.15",
-        "eslint": "9.32.0",
+        "eslint": "^9.16.0",
+        "globals": "^17.3.0",
         "prettier": "3.6.2",
         "release-it": "^19.0.4",
-        "typescript": "5.9.2"
+        "typescript": "5.9.2",
+        "typescript-eslint": "^8.56.0"
     },
-    "peerDependencies": {
-        "n8n-workflow": ">=2.6.1"
+    "peerDependencies": { "n8n-workflow": ">=2.6.1" },
+    "overrides": {
+        "eslint": "^9.16.0"
     }
 }

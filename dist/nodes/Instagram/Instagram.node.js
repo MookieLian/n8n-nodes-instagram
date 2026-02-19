@@ -833,7 +833,8 @@ class Instagram {
                 if (statuses.some((status) => ERROR_STATUSES.has(status))) {
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Media container reported error status (${statuses.join(', ')}) while waiting to publish.`, { itemIndex });
                 }
-                await (0, n8n_workflow_1.sleep)(pollIntervalMs);
+                const effectiveInterval = attempt <= 3 ? Math.min(pollIntervalMs, 1500) : pollIntervalMs;
+                await (0, n8n_workflow_1.sleep)(effectiveInterval);
             }
             throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Timed out waiting for container to become ready. Last known status: ${lastStatus !== null && lastStatus !== void 0 ? lastStatus : 'unknown'}.`, { itemIndex });
         };

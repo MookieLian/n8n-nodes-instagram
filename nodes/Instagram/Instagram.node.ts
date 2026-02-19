@@ -890,7 +890,11 @@ export class Instagram implements INodeType {
 					);
 				}
 
-				await sleep(pollIntervalMs);
+				// Optimize polling: use shorter intervals for first few attempts, then use configured interval
+				// This helps catch containers that become ready quickly without unnecessary delays
+				const effectiveInterval =
+					attempt <= 3 ? Math.min(pollIntervalMs, 1500) : pollIntervalMs;
+				await sleep(effectiveInterval);
 			}
 
 			throw new NodeOperationError(

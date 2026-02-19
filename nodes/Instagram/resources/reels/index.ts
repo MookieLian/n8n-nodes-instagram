@@ -26,9 +26,9 @@ export const reelsResource: ResourceHandler = {
 		description: 'Publish a reel',
 	},
 	fields: reelsFields,
-	pollIntervalMs: 3000,
+	pollIntervalMs: 2000,
 	maxPollAttempts: 80,
-	publishRetryDelay: 3000,
+	publishRetryDelay: 2000,
 	publishMaxAttempts: 6,
 	buildMediaPayload(this: IExecuteFunctions, itemIndex: number): IDataObject {
 		const videoUrl = this.getNodeParameter('videoUrl', itemIndex) as string;
