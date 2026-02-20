@@ -799,11 +799,17 @@ class Instagram {
         };
     }
     async execute() {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10;
         const items = this.getInputData();
         const returnItems = [];
         const hostUrl = 'graph.facebook.com';
         const waitForContainerReady = async ({ creationId, hostUrl, graphApiVersion, itemIndex, pollIntervalMs, maxPollAttempts, }) => {
+            if (!creationId || typeof creationId !== 'string') {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid creation ID provided: ${creationId}. Creation ID must be a non-empty string.`, { itemIndex });
+            }
+            if (!graphApiVersion || typeof graphApiVersion !== 'string') {
+                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid Graph API version provided: ${graphApiVersion}. Graph API version must be a non-empty string.`, { itemIndex });
+            }
             const statusUri = `https://${hostUrl}/${graphApiVersion}/${creationId}`;
             const statusFields = ['status_code', 'status'];
             const pollRequestOptions = {
@@ -818,25 +824,80 @@ class Instagram {
                 json: true,
             };
             let lastStatus;
+            let lastError;
+            let consecutiveErrors = 0;
+            const maxConsecutiveErrors = 3;
+            const startTime = Date.now();
+            const maxTotalTimeMs = 90000;
             for (let attempt = 1; attempt <= maxPollAttempts; attempt++) {
-                const statusResponse = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', pollRequestOptions));
-                const statuses = statusFields
-                    .map((field) => statusResponse[field])
-                    .filter((value) => typeof value === 'string')
-                    .map((value) => value.toUpperCase());
-                if (statuses.length > 0) {
-                    lastStatus = statuses[0];
+                const elapsedTime = Date.now() - startTime;
+                if (elapsedTime > maxTotalTimeMs) {
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Polling timeout: Exceeded maximum polling time of ${maxTotalTimeMs / 1000} seconds. Container ID: ${creationId}, Last known status: ${lastStatus !== null && lastStatus !== void 0 ? lastStatus : 'unknown'}, Attempts: ${attempt}/${maxPollAttempts}.`, { itemIndex });
                 }
-                if (statuses.some((status) => READY_STATUSES.has(status))) {
-                    return;
+                try {
+                    const statusResponse = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', pollRequestOptions));
+                    if (!statusResponse || typeof statusResponse !== 'object') {
+                        consecutiveErrors++;
+                        if (consecutiveErrors >= maxConsecutiveErrors) {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid response format received while polling container status (${consecutiveErrors} consecutive errors). Expected object, got: ${typeof statusResponse}. Response: ${JSON.stringify(statusResponse)}. Container ID: ${creationId}.`, { itemIndex });
+                        }
+                        const errorInterval = Math.min(pollIntervalMs, 1000);
+                        await (0, n8n_workflow_1.sleep)(errorInterval);
+                        continue;
+                    }
+                    consecutiveErrors = 0;
+                    const statuses = statusFields
+                        .map((field) => statusResponse[field])
+                        .filter((value) => typeof value === 'string')
+                        .map((value) => value.toUpperCase());
+                    if (statuses.length > 0) {
+                        lastStatus = statuses[0];
+                    }
+                    if (statuses.some((status) => READY_STATUSES.has(status))) {
+                        return;
+                    }
+                    if (statuses.some((status) => ERROR_STATUSES.has(status))) {
+                        const errorMessage = statusResponse.error_message;
+                        const errorDetails = errorMessage
+                            ? ` Error details: ${errorMessage}`
+                            : '';
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Media container reported error status (${statuses.join(', ')}) while waiting to publish. Container ID: ${creationId}, Attempt: ${attempt}/${maxPollAttempts}.${errorDetails}`, { itemIndex });
+                    }
+                    let effectiveInterval;
+                    if (attempt <= 10) {
+                        effectiveInterval = 500;
+                    }
+                    else if (attempt <= 20) {
+                        effectiveInterval = 1000;
+                    }
+                    else {
+                        effectiveInterval = pollIntervalMs;
+                    }
+                    await (0, n8n_workflow_1.sleep)(effectiveInterval);
                 }
-                if (statuses.some((status) => ERROR_STATUSES.has(status))) {
-                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Media container reported error status (${statuses.join(', ')}) while waiting to publish.`, { itemIndex });
+                catch (error) {
+                    lastError = error;
+                    consecutiveErrors++;
+                    if (error instanceof n8n_workflow_1.NodeOperationError) {
+                        throw error;
+                    }
+                    const errorMessage = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+                    if (errorMessage.includes('invalid') ||
+                        errorMessage.includes('not found') ||
+                        errorMessage.includes('404') ||
+                        errorMessage.includes('does not exist') ||
+                        (consecutiveErrors >= maxConsecutiveErrors)) {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to poll container status after ${attempt} attempts (${consecutiveErrors} consecutive errors). Container may be invalid or failed. Last error: ${error instanceof Error ? error.message : String(error)}. Container ID: ${creationId}, Last known status: ${lastStatus !== null && lastStatus !== void 0 ? lastStatus : 'unknown'}.`, { itemIndex });
+                    }
+                    if (attempt < maxPollAttempts) {
+                        const errorInterval = Math.min(pollIntervalMs, 1000);
+                        await (0, n8n_workflow_1.sleep)(errorInterval);
+                        continue;
+                    }
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to poll container status after ${maxPollAttempts} attempts. Last error: ${error instanceof Error ? error.message : String(error)}. Container ID: ${creationId}, Last known status: ${lastStatus !== null && lastStatus !== void 0 ? lastStatus : 'unknown'}.`, { itemIndex });
                 }
-                const effectiveInterval = attempt <= 3 ? Math.min(pollIntervalMs, 1500) : pollIntervalMs;
-                await (0, n8n_workflow_1.sleep)(effectiveInterval);
             }
-            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Timed out waiting for container to become ready. Last known status: ${lastStatus !== null && lastStatus !== void 0 ? lastStatus : 'unknown'}.`, { itemIndex });
+            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Timed out waiting for container to become ready after ${maxPollAttempts} attempts. Last known status: ${lastStatus !== null && lastStatus !== void 0 ? lastStatus : 'unknown'}. Container ID: ${creationId}. Last error: ${lastError instanceof Error ? lastError.message : lastError ? String(lastError) : 'none'}.`, { itemIndex });
         };
         const isMediaNotReadyError = (error) => {
             var _a, _b, _c, _d;
@@ -855,15 +916,87 @@ class Instagram {
         };
         for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
             try {
-                const resource = this.getNodeParameter('resource', itemIndex);
-                const operation = this.getNodeParameter('operation', itemIndex);
+                let resource;
+                let operation;
+                try {
+                    resource = this.getNodeParameter('resource', itemIndex);
+                    if (!resource || typeof resource !== 'string') {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing resource parameter at item index ${itemIndex}. Resource must be a non-empty string.`, { itemIndex });
+                    }
+                }
+                catch (error) {
+                    if (error instanceof n8n_workflow_1.NodeOperationError) {
+                        throw error;
+                    }
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get resource parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                }
+                try {
+                    operation = this.getNodeParameter('operation', itemIndex);
+                    if (!operation || typeof operation !== 'string') {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing operation parameter at item index ${itemIndex}. Operation must be a non-empty string.`, { itemIndex });
+                    }
+                }
+                catch (error) {
+                    if (error instanceof n8n_workflow_1.NodeOperationError) {
+                        throw error;
+                    }
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get operation parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                }
                 if (resource === 'messaging') {
-                    const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
-                    const accountId = this.getNodeParameter('node', itemIndex);
+                    let graphApiVersion;
+                    let accountId;
+                    try {
+                        graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
+                        if (!graphApiVersion || typeof graphApiVersion !== 'string') {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing Graph API version parameter at item index ${itemIndex}. Graph API version must be a non-empty string (e.g., 'v22.0').`, { itemIndex });
+                        }
+                    }
+                    catch (error) {
+                        if (error instanceof n8n_workflow_1.NodeOperationError) {
+                            throw error;
+                        }
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get Graph API version parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                    }
+                    try {
+                        accountId = this.getNodeParameter('node', itemIndex);
+                        if (!accountId || typeof accountId !== 'string') {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing account ID (node) parameter at item index ${itemIndex}. Account ID must be a non-empty string.`, { itemIndex });
+                        }
+                    }
+                    catch (error) {
+                        if (error instanceof n8n_workflow_1.NodeOperationError) {
+                            throw error;
+                        }
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get account ID (node) parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                    }
                     try {
                         if (operation === 'sendMessage') {
-                            const recipientId = this.getNodeParameter('recipientId', itemIndex);
-                            const text = this.getNodeParameter('messageText', itemIndex);
+                            let recipientId;
+                            let text;
+                            try {
+                                recipientId = this.getNodeParameter('recipientId', itemIndex);
+                                if (!recipientId || typeof recipientId !== 'string') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing recipient ID parameter at item index ${itemIndex}. Recipient ID must be a non-empty string.`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get recipient ID parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
+                            try {
+                                text = this.getNodeParameter('messageText', itemIndex);
+                                if (!text || typeof text !== 'string') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing message text parameter at item index ${itemIndex}. Message text must be a non-empty string.`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get message text parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             const url = `https://${hostUrl}/${graphApiVersion}/${accountId}/messages`;
                             const requestOptions = {
                                 headers: {
@@ -882,7 +1015,19 @@ class Instagram {
                                 },
                                 json: true,
                             };
-                            const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                            let response;
+                            try {
+                                response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                                if (!response || typeof response !== 'object') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid response format received from send message API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to send message via Instagram Messaging API. Account ID: ${accountId}, Recipient ID: ${recipientId}. Error: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             returnItems.push({ json: response, pairedItem: { item: itemIndex } });
                             continue;
                         }
@@ -914,11 +1059,20 @@ class Instagram {
                         if (operation === 'refreshAccessToken') {
                             let token = (_c = this.getNodeParameter('accessToken', itemIndex, '')) !== null && _c !== void 0 ? _c : '';
                             if (!token) {
-                                const credentials = (await this.getCredentials('instagramApi'));
+                                let credentials;
+                                try {
+                                    credentials = (await this.getCredentials('instagramApi'));
+                                }
+                                catch (error) {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to retrieve Instagram API credentials: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                                }
+                                if (!credentials) {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Instagram API credentials not found. Please configure the Instagram API credential.', { itemIndex });
+                                }
                                 token = (_d = credentials === null || credentials === void 0 ? void 0 : credentials.accessToken) !== null && _d !== void 0 ? _d : '';
                             }
-                            if (!token) {
-                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'No access token provided and no access token found in the Instagram API credential.', { itemIndex });
+                            if (!token || typeof token !== 'string') {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'No access token provided and no access token found in the Instagram API credential. Please provide an access token or configure it in the credential.', { itemIndex });
                             }
                             const url = 'https://graph.instagram.com/refresh_access_token';
                             const requestOptions = {
@@ -933,13 +1087,49 @@ class Instagram {
                                 },
                                 json: true,
                             };
-                            const response = (await this.helpers.httpRequest.call(this, requestOptions));
+                            let response;
+                            try {
+                                response = (await this.helpers.httpRequest.call(this, requestOptions));
+                                if (!response || typeof response !== 'object') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid response format received from refresh access token API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to refresh access token: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             returnItems.push({ json: response, pairedItem: { item: itemIndex } });
                             continue;
                         }
                         if (operation === 'exchangeAccessToken') {
-                            const shortLivedToken = this.getNodeParameter('shortLivedAccessToken', itemIndex);
-                            const appSecret = this.getNodeParameter('appSecret', itemIndex);
+                            let shortLivedToken;
+                            let appSecret;
+                            try {
+                                shortLivedToken = this.getNodeParameter('shortLivedAccessToken', itemIndex);
+                                if (!shortLivedToken || typeof shortLivedToken !== 'string') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing short-lived access token parameter at item index ${itemIndex}. Short-lived access token must be a non-empty string.`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get short-lived access token parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
+                            try {
+                                appSecret = this.getNodeParameter('appSecret', itemIndex);
+                                if (!appSecret || typeof appSecret !== 'string') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing app secret parameter at item index ${itemIndex}. App secret must be a non-empty string.`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get app secret parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             const url = 'https://graph.instagram.com/access_token';
                             const requestOptions = {
                                 headers: {
@@ -954,7 +1144,19 @@ class Instagram {
                                 },
                                 json: true,
                             };
-                            const response = (await this.helpers.httpRequest.call(this, requestOptions));
+                            let response;
+                            try {
+                                response = (await this.helpers.httpRequest.call(this, requestOptions));
+                                if (!response || typeof response !== 'object') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid response format received from exchange access token API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to exchange access token: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             returnItems.push({ json: response, pairedItem: { item: itemIndex } });
                             continue;
                         }
@@ -968,7 +1170,19 @@ class Instagram {
                                 url,
                                 json: true,
                             };
-                            const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                            let response;
+                            try {
+                                response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                                if (!response || typeof response !== 'object') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid response format received from /me endpoint. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get user profile from /me endpoint: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             returnItems.push({ json: response, pairedItem: { item: itemIndex } });
                             continue;
                         }
@@ -1003,13 +1217,64 @@ class Instagram {
                         return typeof apiMsg === 'string' ? apiMsg : (_d = e === null || e === void 0 ? void 0 : e.message) !== null && _d !== void 0 ? _d : String(error);
                     };
                     try {
-                        const node = this.getNodeParameter('node', itemIndex);
-                        const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
-                        const caption = this.getNodeParameter('caption', itemIndex);
-                        const carouselMedia = this.getNodeParameter('carouselMedia', itemIndex, { mediaItem: [] });
+                        let node;
+                        let graphApiVersion;
+                        let caption;
+                        let carouselMedia;
+                        try {
+                            node = this.getNodeParameter('node', itemIndex);
+                            if (!node || typeof node !== 'string') {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing node (account ID) parameter at item index ${itemIndex}. Node must be a non-empty string.`, { itemIndex });
+                            }
+                        }
+                        catch (error) {
+                            if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                throw error;
+                            }
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get node parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                        }
+                        try {
+                            graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
+                            if (!graphApiVersion || typeof graphApiVersion !== 'string') {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing Graph API version parameter at item index ${itemIndex}. Graph API version must be a non-empty string (e.g., 'v22.0').`, { itemIndex });
+                            }
+                        }
+                        catch (error) {
+                            if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                throw error;
+                            }
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get Graph API version parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                        }
+                        try {
+                            caption = this.getNodeParameter('caption', itemIndex);
+                            if (typeof caption !== 'string') {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid caption parameter at item index ${itemIndex}. Caption must be a string.`, { itemIndex });
+                            }
+                        }
+                        catch (error) {
+                            if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                throw error;
+                            }
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get caption parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                        }
+                        try {
+                            carouselMedia = this.getNodeParameter('carouselMedia', itemIndex, { mediaItem: [] });
+                            if (!carouselMedia || typeof carouselMedia !== 'object') {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid carousel media parameter at item index ${itemIndex}. Carousel media must be an object.`, { itemIndex });
+                            }
+                        }
+                        catch (error) {
+                            if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                throw error;
+                            }
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get carousel media parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                        }
                         const mediaItems = (_g = carouselMedia === null || carouselMedia === void 0 ? void 0 : carouselMedia.mediaItem) !== null && _g !== void 0 ? _g : [];
+                        if (!Array.isArray(mediaItems)) {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid carousel media items format at item index ${itemIndex}. Media items must be an array.`, { itemIndex });
+                        }
                         if (mediaItems.length < 2 || mediaItems.length > 10) {
-                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Carousel must have between 2 and 10 media items.', { itemIndex });
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Carousel must have between 2 and 10 media items. Found ${mediaItems.length} items at item index ${itemIndex}.`, { itemIndex });
                         }
                         const pollIntervalMs = 1500;
                         const maxPollAttempts = 20;
@@ -1017,11 +1282,20 @@ class Instagram {
                         const mediaUri = `https://${hostUrl}/${graphApiVersion}/${node}/media`;
                         for (let i = 0; i < mediaItems.length; i++) {
                             const item = mediaItems[i];
+                            if (!item || typeof item !== 'object') {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid carousel media item at index ${i} (item ${i + 1} of ${mediaItems.length}) at item index ${itemIndex}. Media item must be an object.`, { itemIndex });
+                            }
                             const isVideo = item.mediaType === 'video';
                             const mediaLabel = `Carousel item ${i + 1} (${isVideo ? 'video' : 'image'})`;
+                            if (!item.mediaType || typeof item.mediaType !== 'string') {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${mediaLabel}: Media type is required and must be either 'image' or 'video'.`, { itemIndex });
+                            }
+                            if (item.mediaType !== 'image' && item.mediaType !== 'video') {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${mediaLabel}: Invalid media type '${item.mediaType}'. Media type must be either 'image' or 'video'.`, { itemIndex });
+                            }
                             const url = isVideo ? ((_h = item.videoUrl) !== null && _h !== void 0 ? _h : '').trim() : ((_j = item.imageUrl) !== null && _j !== void 0 ? _j : '').trim();
-                            if (!url) {
-                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${mediaLabel}: ${isVideo ? 'Video URL' : 'Image URL'} is required.`, { itemIndex });
+                            if (!url || typeof url !== 'string') {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${mediaLabel}: ${isVideo ? 'Video URL' : 'Image URL'} is required and must be a non-empty string.`, { itemIndex });
                             }
                             const childQs = isVideo
                                 ? { media_type: 'VIDEO', video_url: url, is_carousel_item: true }
@@ -1041,8 +1315,8 @@ class Instagram {
                                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${mediaLabel}: container creation failed — ${getCarouselErrorMessage(err)}`, { itemIndex });
                             }
                             const childId = childResponse.id;
-                            if (!childId) {
-                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${mediaLabel}: container creation did not return an id.`, { itemIndex });
+                            if (!childId || typeof childId !== 'string') {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${mediaLabel}: Container creation did not return a valid ID. Response: ${JSON.stringify(childResponse)}`, { itemIndex });
                             }
                             try {
                                 await waitForContainerReady({
@@ -1079,8 +1353,8 @@ class Instagram {
                             throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Carousel container (create): ${getCarouselErrorMessage(err)}`, { itemIndex });
                         }
                         const carouselContainerId = carouselResponse.id;
-                        if (!carouselContainerId) {
-                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Carousel container creation did not return an id.', { itemIndex });
+                        if (!carouselContainerId || typeof carouselContainerId !== 'string') {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Carousel container creation did not return a valid ID. Response: ${JSON.stringify(carouselResponse)}`, { itemIndex });
                         }
                         try {
                             await waitForContainerReady({
@@ -1134,11 +1408,47 @@ class Instagram {
                     }
                 }
                 if (resource === 'igHashtag') {
-                    const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
-                    const accountId = this.getNodeParameter('node', itemIndex);
+                    let graphApiVersion;
+                    let accountId;
+                    try {
+                        graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
+                        if (!graphApiVersion || typeof graphApiVersion !== 'string') {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing Graph API version parameter at item index ${itemIndex}. Graph API version must be a non-empty string (e.g., 'v22.0').`, { itemIndex });
+                        }
+                    }
+                    catch (error) {
+                        if (error instanceof n8n_workflow_1.NodeOperationError) {
+                            throw error;
+                        }
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get Graph API version parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                    }
+                    try {
+                        accountId = this.getNodeParameter('node', itemIndex);
+                        if (!accountId || typeof accountId !== 'string') {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing account ID (node) parameter at item index ${itemIndex}. Account ID must be a non-empty string.`, { itemIndex });
+                        }
+                    }
+                    catch (error) {
+                        if (error instanceof n8n_workflow_1.NodeOperationError) {
+                            throw error;
+                        }
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get account ID (node) parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                    }
                     try {
                         if (operation === 'search') {
-                            const hashtagName = this.getNodeParameter('hashtagName', itemIndex);
+                            let hashtagName;
+                            try {
+                                hashtagName = this.getNodeParameter('hashtagName', itemIndex);
+                                if (!hashtagName || typeof hashtagName !== 'string') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing hashtag name parameter at item index ${itemIndex}. Hashtag name must be a non-empty string (without the # symbol).`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get hashtag name parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             const url = `https://${hostUrl}/${graphApiVersion}/ig_hashtag_search`;
                             const requestOptions = {
                                 headers: {
@@ -1152,14 +1462,62 @@ class Instagram {
                                 },
                                 json: true,
                             };
-                            const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                            let response;
+                            try {
+                                response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                                if (!response || typeof response !== 'object') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid response format received from hashtag search API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to search hashtag '${hashtagName}' for account ${accountId}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             returnItems.push({ json: response, pairedItem: { item: itemIndex } });
                             continue;
                         }
                         if (operation === 'getRecentMedia' || operation === 'getTopMedia') {
-                            const hashtagId = this.getNodeParameter('hashtagId', itemIndex);
-                            const returnAll = this.getNodeParameter('returnAll', itemIndex, false);
-                            const limit = this.getNodeParameter('limit', itemIndex, 0);
+                            let hashtagId;
+                            let returnAll;
+                            let limit;
+                            try {
+                                hashtagId = this.getNodeParameter('hashtagId', itemIndex);
+                                if (!hashtagId || typeof hashtagId !== 'string') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing hashtag ID parameter at item index ${itemIndex}. Hashtag ID must be a non-empty string.`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get hashtag ID parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
+                            try {
+                                returnAll = this.getNodeParameter('returnAll', itemIndex, false);
+                                if (typeof returnAll !== 'boolean') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid returnAll parameter at item index ${itemIndex}. ReturnAll must be a boolean.`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get returnAll parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
+                            try {
+                                limit = this.getNodeParameter('limit', itemIndex, 0);
+                                if (typeof limit !== 'number' || limit < 0) {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid limit parameter at item index ${itemIndex}. Limit must be a non-negative number.`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get limit parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             const edge = operation === 'getRecentMedia' ? 'recent_media' : 'top_media';
                             const baseUrl = `https://${hostUrl}/${graphApiVersion}/${hashtagId}/${edge}`;
                             const fields = [
@@ -1176,7 +1534,9 @@ class Instagram {
                             let after;
                             const hardCap = returnAll ? 5000 : limit;
                             let hasMore = true;
+                            let pageNumber = 0;
                             while (hasMore) {
+                                pageNumber++;
                                 const remaining = returnAll ? undefined : hardCap - accumulated.length;
                                 const pageLimit = remaining !== undefined ? Math.min(remaining, 50) : 50;
                                 const qs = {
@@ -1196,8 +1556,23 @@ class Instagram {
                                     qs,
                                     json: true,
                                 };
-                                const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                                let response;
+                                try {
+                                    response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                                    if (!response || typeof response !== 'object') {
+                                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid response format received from ${edge} API at page ${pageNumber}. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`, { itemIndex });
+                                    }
+                                }
+                                catch (error) {
+                                    if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                        throw error;
+                                    }
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to fetch ${edge} for hashtag ${hashtagId} at page ${pageNumber}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                                }
                                 const pageData = (_o = response.data) !== null && _o !== void 0 ? _o : [];
+                                if (!Array.isArray(pageData)) {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid data format in response from ${edge} API at page ${pageNumber}. Expected array, got: ${typeof pageData}. Response: ${JSON.stringify(response)}`, { itemIndex });
+                                }
                                 accumulated.push(...pageData);
                                 const paging = response.paging;
                                 after = (_p = paging === null || paging === void 0 ? void 0 : paging.cursors) === null || _p === void 0 ? void 0 : _p.after;
@@ -1233,8 +1608,32 @@ class Instagram {
                     }
                 }
                 if (resource === 'page') {
-                    const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
-                    const pageId = this.getNodeParameter('pageId', itemIndex);
+                    let graphApiVersion;
+                    let pageId;
+                    try {
+                        graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
+                        if (!graphApiVersion || typeof graphApiVersion !== 'string') {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing Graph API version parameter at item index ${itemIndex}. Graph API version must be a non-empty string (e.g., 'v22.0').`, { itemIndex });
+                        }
+                    }
+                    catch (error) {
+                        if (error instanceof n8n_workflow_1.NodeOperationError) {
+                            throw error;
+                        }
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get Graph API version parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                    }
+                    try {
+                        pageId = this.getNodeParameter('pageId', itemIndex);
+                        if (!pageId || typeof pageId !== 'string') {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing page ID parameter at item index ${itemIndex}. Page ID must be a non-empty string.`, { itemIndex });
+                        }
+                    }
+                    catch (error) {
+                        if (error instanceof n8n_workflow_1.NodeOperationError) {
+                            throw error;
+                        }
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get page ID parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                    }
                     try {
                         if (operation === 'getInstagramAccount') {
                             const url = `https://${hostUrl}/${graphApiVersion}/${pageId}`;
@@ -1249,7 +1648,19 @@ class Instagram {
                                 },
                                 json: true,
                             };
-                            const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                            let response;
+                            try {
+                                response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                                if (!response || typeof response !== 'object') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid response format received from page API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get Instagram account for page ${pageId}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             returnItems.push({ json: response, pairedItem: { item: itemIndex } });
                             continue;
                         }
@@ -1277,8 +1688,32 @@ class Instagram {
                     }
                 }
                 if (resource === 'igUser') {
-                    const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
-                    const accountId = this.getNodeParameter('node', itemIndex);
+                    let graphApiVersion;
+                    let accountId;
+                    try {
+                        graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
+                        if (!graphApiVersion || typeof graphApiVersion !== 'string') {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing Graph API version parameter at item index ${itemIndex}. Graph API version must be a non-empty string (e.g., 'v22.0').`, { itemIndex });
+                        }
+                    }
+                    catch (error) {
+                        if (error instanceof n8n_workflow_1.NodeOperationError) {
+                            throw error;
+                        }
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get Graph API version parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                    }
+                    try {
+                        accountId = this.getNodeParameter('node', itemIndex);
+                        if (!accountId || typeof accountId !== 'string') {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing account ID (node) parameter at item index ${itemIndex}. Account ID must be a non-empty string.`, { itemIndex });
+                        }
+                    }
+                    catch (error) {
+                        if (error instanceof n8n_workflow_1.NodeOperationError) {
+                            throw error;
+                        }
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get account ID (node) parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                    }
                     try {
                         if (operation === 'get') {
                             const url = `https://${hostUrl}/${graphApiVersion}/${accountId}`;
@@ -1303,13 +1738,49 @@ class Instagram {
                                 },
                                 json: true,
                             };
-                            const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                            let response;
+                            try {
+                                response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                                if (!response || typeof response !== 'object') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid response format received from IG User API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get IG User profile for account ${accountId}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             returnItems.push({ json: response, pairedItem: { item: itemIndex } });
                             continue;
                         }
                         if (operation === 'getMedia') {
-                            const returnAll = this.getNodeParameter('returnAll', itemIndex, false);
-                            const limit = this.getNodeParameter('limit', itemIndex, 0);
+                            let returnAll;
+                            let limit;
+                            try {
+                                returnAll = this.getNodeParameter('returnAll', itemIndex, false);
+                                if (typeof returnAll !== 'boolean') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid returnAll parameter at item index ${itemIndex}. ReturnAll must be a boolean.`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get returnAll parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
+                            try {
+                                limit = this.getNodeParameter('limit', itemIndex, 0);
+                                if (typeof limit !== 'number' || limit < 0) {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid limit parameter at item index ${itemIndex}. Limit must be a non-negative number.`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get limit parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             const baseUrl = `https://${hostUrl}/${graphApiVersion}/${accountId}/media`;
                             const fields = [
                                 'id',
@@ -1325,7 +1796,9 @@ class Instagram {
                             let after;
                             const hardCap = returnAll ? 5000 : limit;
                             let hasMore = true;
+                            let pageNumber = 0;
                             while (hasMore) {
+                                pageNumber++;
                                 const remaining = returnAll ? undefined : hardCap - accumulated.length;
                                 const pageLimit = remaining !== undefined ? Math.min(remaining, 100) : 100;
                                 const qs = {
@@ -1344,8 +1817,23 @@ class Instagram {
                                     qs,
                                     json: true,
                                 };
-                                const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                                let response;
+                                try {
+                                    response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                                    if (!response || typeof response !== 'object') {
+                                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid response format received from IG User media API at page ${pageNumber}. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`, { itemIndex });
+                                    }
+                                }
+                                catch (error) {
+                                    if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                        throw error;
+                                    }
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to fetch media for account ${accountId} at page ${pageNumber}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                                }
                                 const pageData = (_u = response.data) !== null && _u !== void 0 ? _u : [];
+                                if (!Array.isArray(pageData)) {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid data format in response from IG User media API at page ${pageNumber}. Expected array, got: ${typeof pageData}. Response: ${JSON.stringify(response)}`, { itemIndex });
+                                }
                                 accumulated.push(...pageData);
                                 const paging = response.paging;
                                 after = (_v = paging === null || paging === void 0 ? void 0 : paging.cursors) === null || _v === void 0 ? void 0 : _v.after;
@@ -1381,10 +1869,34 @@ class Instagram {
                     }
                 }
                 if (resource === 'comments') {
-                    const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
+                    let graphApiVersion;
+                    try {
+                        graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
+                        if (!graphApiVersion || typeof graphApiVersion !== 'string') {
+                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing Graph API version parameter at item index ${itemIndex}. Graph API version must be a non-empty string (e.g., 'v22.0').`, { itemIndex });
+                        }
+                    }
+                    catch (error) {
+                        if (error instanceof n8n_workflow_1.NodeOperationError) {
+                            throw error;
+                        }
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get Graph API version parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                    }
                     try {
                         if (operation === 'list') {
-                            const mediaId = this.getNodeParameter('mediaId', itemIndex);
+                            let mediaId;
+                            try {
+                                mediaId = this.getNodeParameter('mediaId', itemIndex);
+                                if (!mediaId || typeof mediaId !== 'string') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing media ID parameter at item index ${itemIndex}. Media ID must be a non-empty string.`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get media ID parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             const url = `https://${hostUrl}/${graphApiVersion}/${mediaId}/comments`;
                             const requestOptions = {
                                 headers: {
@@ -1394,12 +1906,36 @@ class Instagram {
                                 url,
                                 json: true,
                             };
-                            const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                            let response;
+                            try {
+                                response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                                if (!response || typeof response !== 'object') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid response format received from comments list API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to list comments for media ${mediaId}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             returnItems.push({ json: response, pairedItem: { item: itemIndex } });
                             continue;
                         }
                         if (operation === 'hideComment' || operation === 'unhideComment') {
-                            const commentId = this.getNodeParameter('commentId', itemIndex);
+                            let commentId;
+                            try {
+                                commentId = this.getNodeParameter('commentId', itemIndex);
+                                if (!commentId || typeof commentId !== 'string') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing comment ID parameter at item index ${itemIndex}. Comment ID must be a non-empty string.`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get comment ID parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             const hideValue = operation === 'hideComment';
                             const url = `https://${hostUrl}/${graphApiVersion}/${commentId}`;
                             const requestOptions = {
@@ -1413,12 +1949,36 @@ class Instagram {
                                 },
                                 json: true,
                             };
-                            const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                            let response;
+                            try {
+                                response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                                if (!response || typeof response !== 'object') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid response format received from ${operation} API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to ${operation} for comment ${commentId}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             returnItems.push({ json: response, pairedItem: { item: itemIndex } });
                             continue;
                         }
                         if (operation === 'deleteComment') {
-                            const commentId = this.getNodeParameter('commentId', itemIndex);
+                            let commentId;
+                            try {
+                                commentId = this.getNodeParameter('commentId', itemIndex);
+                                if (!commentId || typeof commentId !== 'string') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing comment ID parameter at item index ${itemIndex}. Comment ID must be a non-empty string.`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get comment ID parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             const url = `https://${hostUrl}/${graphApiVersion}/${commentId}`;
                             const requestOptions = {
                                 headers: {
@@ -1428,12 +1988,36 @@ class Instagram {
                                 url,
                                 json: true,
                             };
-                            const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                            let response;
+                            try {
+                                response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                                if (!response || typeof response !== 'object') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid response format received from delete comment API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to delete comment ${commentId}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             returnItems.push({ json: response, pairedItem: { item: itemIndex } });
                             continue;
                         }
                         if (operation === 'disableComments' || operation === 'enableComments') {
-                            const mediaId = this.getNodeParameter('mediaId', itemIndex);
+                            let mediaId;
+                            try {
+                                mediaId = this.getNodeParameter('mediaId', itemIndex);
+                                if (!mediaId || typeof mediaId !== 'string') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing media ID parameter at item index ${itemIndex}. Media ID must be a non-empty string.`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get media ID parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             const commentEnabled = operation === 'enableComments';
                             const url = `https://${hostUrl}/${graphApiVersion}/${mediaId}`;
                             const requestOptions = {
@@ -1447,14 +2031,62 @@ class Instagram {
                                 },
                                 json: true,
                             };
-                            const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                            let response;
+                            try {
+                                response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                                if (!response || typeof response !== 'object') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid response format received from ${operation} API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to ${operation} for media ${mediaId}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             returnItems.push({ json: response, pairedItem: { item: itemIndex } });
                             continue;
                         }
                         if (operation === 'sendPrivateReply') {
-                            const accountId = this.getNodeParameter('node', itemIndex);
-                            const commentId = this.getNodeParameter('commentId', itemIndex);
-                            const text = this.getNodeParameter('privateReplyText', itemIndex);
+                            let accountId;
+                            let commentId;
+                            let text;
+                            try {
+                                accountId = this.getNodeParameter('node', itemIndex);
+                                if (!accountId || typeof accountId !== 'string') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing account ID (node) parameter at item index ${itemIndex}. Account ID must be a non-empty string.`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get account ID (node) parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
+                            try {
+                                commentId = this.getNodeParameter('commentId', itemIndex);
+                                if (!commentId || typeof commentId !== 'string') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing comment ID parameter at item index ${itemIndex}. Comment ID must be a non-empty string.`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get comment ID parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
+                            try {
+                                text = this.getNodeParameter('privateReplyText', itemIndex);
+                                if (!text || typeof text !== 'string') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing private reply text parameter at item index ${itemIndex}. Private reply text must be a non-empty string.`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get private reply text parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             const url = `https://${hostUrl}/${graphApiVersion}/${accountId}/messages`;
                             const requestOptions = {
                                 headers: {
@@ -1473,7 +2105,19 @@ class Instagram {
                                 },
                                 json: true,
                             };
-                            const response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                            let response;
+                            try {
+                                response = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', requestOptions));
+                                if (!response || typeof response !== 'object') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid response format received from send private reply API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to send private reply to comment ${commentId} for account ${accountId}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                            }
                             returnItems.push({ json: response, pairedItem: { item: itemIndex } });
                             continue;
                         }
@@ -1507,21 +2151,101 @@ class Instagram {
                 }
                 const handler = resources_1.instagramResourceHandlers[resource];
                 if (!handler) {
-                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Unsupported resource: ${resource}`, {
-                        itemIndex,
-                    });
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Unsupported resource: ${resource}. Supported resources are: ${Object.keys(resources_1.instagramResourceHandlers).join(', ')}.`, { itemIndex });
                 }
-                const node = this.getNodeParameter('node', itemIndex);
-                const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
-                const caption = this.getNodeParameter('caption', itemIndex);
-                const additionalFields = this.getNodeParameter('additionalFields', itemIndex, {});
+                let node;
+                let graphApiVersion;
+                let caption;
+                let additionalFields;
+                try {
+                    node = this.getNodeParameter('node', itemIndex);
+                    if (!node || typeof node !== 'string') {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing node (account ID) parameter at item index ${itemIndex}. Node must be a non-empty string.`, { itemIndex });
+                    }
+                }
+                catch (error) {
+                    if (error instanceof n8n_workflow_1.NodeOperationError) {
+                        throw error;
+                    }
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get node parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                }
+                try {
+                    graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex);
+                    if (!graphApiVersion || typeof graphApiVersion !== 'string') {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid or missing Graph API version parameter at item index ${itemIndex}. Graph API version must be a non-empty string (e.g., 'v22.0').`, { itemIndex });
+                    }
+                }
+                catch (error) {
+                    if (error instanceof n8n_workflow_1.NodeOperationError) {
+                        throw error;
+                    }
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get Graph API version parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                }
+                try {
+                    caption = this.getNodeParameter('caption', itemIndex);
+                    if (typeof caption !== 'string') {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid caption parameter at item index ${itemIndex}. Caption must be a string.`, { itemIndex });
+                    }
+                }
+                catch (error) {
+                    if (error instanceof n8n_workflow_1.NodeOperationError) {
+                        throw error;
+                    }
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get caption parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                }
+                try {
+                    additionalFields = this.getNodeParameter('additionalFields', itemIndex, {});
+                    if (!additionalFields || typeof additionalFields !== 'object') {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid additional fields parameter at item index ${itemIndex}. Additional fields must be an object.`, { itemIndex });
+                    }
+                }
+                catch (error) {
+                    if (error instanceof n8n_workflow_1.NodeOperationError) {
+                        throw error;
+                    }
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get additional fields parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                }
                 const altText = (_0 = additionalFields.altText) !== null && _0 !== void 0 ? _0 : '';
                 const rawLocationId = additionalFields.locationId;
                 const userTagsCollection = additionalFields.userTags;
                 const productTagsCollection = additionalFields.productTags;
                 const httpRequestMethod = 'POST';
                 const mediaUri = `https://${hostUrl}/${graphApiVersion}/${node}/media`;
-                const mediaPayload = handler.buildMediaPayload.call(this, itemIndex);
+                let mediaPayload;
+                try {
+                    mediaPayload = handler.buildMediaPayload.call(this, itemIndex);
+                    if (!mediaPayload || typeof mediaPayload !== 'object') {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid media payload returned from handler for resource '${resource}' at item index ${itemIndex}. Expected object, got: ${typeof mediaPayload}.`, { itemIndex });
+                    }
+                }
+                catch (error) {
+                    if (error instanceof n8n_workflow_1.NodeOperationError) {
+                        throw error;
+                    }
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to build media payload for resource '${resource}' at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                }
+                const videoUrl = mediaPayload.video_url;
+                const imageUrl = mediaPayload.image_url;
+                if (videoUrl) {
+                    const trimmedUrl = videoUrl.trim();
+                    if (!trimmedUrl) {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Video URL is empty for resource '${resource}' at item index ${itemIndex}. Please provide a valid video URL.`, { itemIndex });
+                    }
+                    const urlPattern = /^https?:\/\/.+/i;
+                    if (!urlPattern.test(trimmedUrl)) {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid video URL format for resource '${resource}' at item index ${itemIndex}. URL must be a valid HTTP/HTTPS URL starting with http:// or https://. Provided URL: ${trimmedUrl.substring(0, 100)}${trimmedUrl.length > 100 ? '...' : ''}`, { itemIndex });
+                    }
+                }
+                if (imageUrl) {
+                    const trimmedUrl = imageUrl.trim();
+                    if (!trimmedUrl) {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Image URL is empty for resource '${resource}' at item index ${itemIndex}. Please provide a valid image URL.`, { itemIndex });
+                    }
+                    const urlPattern = /^https?:\/\/.+/i;
+                    if (!urlPattern.test(trimmedUrl)) {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid image URL format for resource '${resource}' at item index ${itemIndex}. URL must be a valid HTTP/HTTPS URL starting with http:// or https://. Provided URL: ${trimmedUrl.substring(0, 100)}${trimmedUrl.length > 100 ? '...' : ''}`, { itemIndex });
+                    }
+                }
                 const mediaQs = {
                     caption,
                     ...mediaPayload,
@@ -1593,16 +2317,63 @@ class Instagram {
                 };
                 let mediaResponse;
                 try {
-                    mediaResponse = await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', mediaRequestOptions);
+                    mediaResponse = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', mediaRequestOptions));
                 }
                 catch (error) {
+                    let errorMessage = 'Unknown error';
+                    let errorCode;
+                    let errorType;
+                    const err = error;
+                    if ((_2 = (_1 = err.response) === null || _1 === void 0 ? void 0 : _1.body) === null || _2 === void 0 ? void 0 : _2.error) {
+                        const graphError = err.response.body.error;
+                        errorMessage = graphError.message || errorMessage;
+                        errorCode = graphError.code;
+                        errorType = graphError.type;
+                    }
+                    else if (err.message) {
+                        errorMessage = err.message;
+                    }
+                    else if (error instanceof Error) {
+                        errorMessage = error.message;
+                    }
+                    else {
+                        errorMessage = String(error);
+                    }
+                    const lowerErrorMessage = errorMessage.toLowerCase();
+                    if (lowerErrorMessage.includes('invalid url') ||
+                        lowerErrorMessage.includes('url') ||
+                        lowerErrorMessage.includes('not found') ||
+                        lowerErrorMessage.includes('404') ||
+                        lowerErrorMessage.includes('cannot access') ||
+                        lowerErrorMessage.includes('unreachable')) {
+                        const urlToCheck = videoUrl || imageUrl || 'provided URL';
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to create media container: The ${videoUrl ? 'video' : 'image'} URL appears to be invalid or unreachable. Error: ${errorMessage}${errorCode ? ` (Code: ${errorCode})` : ''}. Please verify that the URL is accessible and points to a valid ${videoUrl ? 'video' : 'image'} file. URL: ${urlToCheck.substring(0, 100)}${urlToCheck.length > 100 ? '...' : ''}`, { itemIndex });
+                    }
                     if (!this.continueOnFail()) {
-                        throw new n8n_workflow_1.NodeApiError(this.getNode(), error);
+                        const errorObj = (_4 = (_3 = err.response) === null || _3 === void 0 ? void 0 : _3.body) === null || _4 === void 0 ? void 0 : _4.error;
+                        const detailedError = {
+                            message: errorMessage,
+                            ...(errorCode && { code: errorCode }),
+                            ...(errorType && { type: errorType }),
+                            ...(err.statusCode && { statusCode: err.statusCode }),
+                        };
+                        if (errorObj && typeof errorObj === 'object' && !Array.isArray(errorObj)) {
+                            Object.keys(errorObj).forEach((key) => {
+                                const value = errorObj[key];
+                                if (value !== undefined &&
+                                    value !== null &&
+                                    (typeof value === 'string' ||
+                                        typeof value === 'number' ||
+                                        typeof value === 'boolean')) {
+                                    detailedError[`error_${key}`] = value;
+                                }
+                            });
+                        }
+                        throw new n8n_workflow_1.NodeApiError(this.getNode(), detailedError);
                     }
                     let errorItem;
-                    const err = error;
                     if (err.response !== undefined) {
-                        const graphApiErrors = (_2 = (_1 = err.response.body) === null || _1 === void 0 ? void 0 : _1.error) !== null && _2 !== void 0 ? _2 : {};
+                        const graphApiErrors = (_6 = (_5 = err.response.body) === null || _5 === void 0 ? void 0 : _5.error) !== null && _6 !== void 0 ? _6 : {};
                         errorItem = {
                             statusCode: err.statusCode,
                             ...graphApiErrors,
@@ -1616,30 +2387,68 @@ class Instagram {
                     continue;
                 }
                 if (typeof mediaResponse === 'string') {
+                    const responseStr = mediaResponse;
                     if (!this.continueOnFail()) {
-                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Media creation response body is not valid JSON.', {
-                            itemIndex,
-                        });
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Media creation response body is not valid JSON. Received string response: ${responseStr.substring(0, 200)}${responseStr.length > 200 ? '...' : ''}`, { itemIndex });
                     }
-                    returnItems.push({ json: { message: mediaResponse }, pairedItem: { item: itemIndex } });
+                    returnItems.push({ json: { message: responseStr }, pairedItem: { item: itemIndex } });
                     continue;
                 }
                 const creationId = mediaResponse.id;
-                if (!creationId) {
+                if (!creationId || typeof creationId !== 'string') {
+                    const responseData = mediaResponse;
+                    const errorObj = responseData.error;
+                    const errorMessage = errorObj && typeof errorObj === 'object' && !Array.isArray(errorObj)
+                        ? errorObj.message
+                        : undefined;
+                    const errorCode = errorObj && typeof errorObj === 'object' && !Array.isArray(errorObj)
+                        ? errorObj.code
+                        : undefined;
                     if (!this.continueOnFail()) {
-                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Media creation response did not contain an id (creation_id).', { itemIndex });
+                        const errorDetails = errorMessage
+                            ? ` API Error: ${errorMessage}${errorCode ? ` (Code: ${errorCode})` : ''}`
+                            : '';
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Media creation response did not contain a valid id (creation_id).${errorDetails} Response: ${JSON.stringify(mediaResponse)}`, { itemIndex });
                     }
-                    returnItems.push({ json: { error: 'No creation_id in response', response: mediaResponse }, pairedItem: { item: itemIndex } });
+                    returnItems.push({
+                        json: {
+                            error: 'No creation_id in response',
+                            response: mediaResponse,
+                            resource,
+                            itemIndex,
+                            ...(errorMessage && { apiError: errorMessage }),
+                            ...(errorCode && { apiErrorCode: errorCode }),
+                        },
+                        pairedItem: { item: itemIndex },
+                    });
                     continue;
                 }
-                await waitForContainerReady({
-                    creationId,
-                    hostUrl,
-                    graphApiVersion,
-                    itemIndex,
-                    pollIntervalMs: handler.pollIntervalMs,
-                    maxPollAttempts: handler.maxPollAttempts,
-                });
+                const responseData = mediaResponse;
+                const responseError = responseData.error;
+                if (responseError && typeof responseError === 'object' && !Array.isArray(responseError)) {
+                    const errorObj = responseError;
+                    const errorMsg = errorObj.message;
+                    const errorCode = errorObj.code;
+                    if (!this.continueOnFail()) {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Media container creation returned an error despite providing an ID. Error: ${errorMsg || 'Unknown error'}${errorCode ? ` (Code: ${errorCode})` : ''}. Container ID: ${creationId}. This may indicate the media URL is invalid or inaccessible.`, { itemIndex });
+                    }
+                }
+                try {
+                    await waitForContainerReady({
+                        creationId,
+                        hostUrl,
+                        graphApiVersion,
+                        itemIndex,
+                        pollIntervalMs: handler.pollIntervalMs,
+                        maxPollAttempts: handler.maxPollAttempts,
+                    });
+                }
+                catch (error) {
+                    if (error instanceof n8n_workflow_1.NodeOperationError) {
+                        throw error;
+                    }
+                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to wait for container to become ready. Creation ID: ${creationId}, Resource: ${resource}. Error: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
+                }
                 const publishUri = `https://${hostUrl}/${graphApiVersion}/${node}/media_publish`;
                 const publishQs = {
                     creation_id: creationId,
@@ -1660,7 +2469,7 @@ class Instagram {
                 let publishFailedWithError = false;
                 for (let attempt = 1; attempt <= publishMaxAttempts; attempt++) {
                     try {
-                        publishResponse = await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', publishRequestOptions);
+                        publishResponse = (await this.helpers.httpRequestWithAuthentication.call(this, 'instagramApi', publishRequestOptions));
                         publishSucceeded = true;
                         break;
                     }
@@ -1675,7 +2484,7 @@ class Instagram {
                         let errorItem;
                         const err = error;
                         if (err.response !== undefined) {
-                            const graphApiErrors = (_4 = (_3 = err.response.body) === null || _3 === void 0 ? void 0 : _3.error) !== null && _4 !== void 0 ? _4 : {};
+                            const graphApiErrors = (_8 = (_7 = err.response.body) === null || _7 === void 0 ? void 0 : _7.error) !== null && _8 !== void 0 ? _8 : {};
                             errorItem = {
                                 statusCode: err.statusCode,
                                 ...graphApiErrors,
@@ -1700,11 +2509,16 @@ class Instagram {
                 }
                 if (typeof publishResponse === 'string') {
                     if (!this.continueOnFail()) {
-                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Media publish response body is not valid JSON.', {
-                            itemIndex,
-                        });
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Media publish response body is not valid JSON. Received string response: ${publishResponse.substring(0, 200)}${publishResponse.length > 200 ? '...' : ''}`, { itemIndex });
                     }
                     returnItems.push({ json: { message: publishResponse }, pairedItem: { item: itemIndex } });
+                    continue;
+                }
+                if (!publishResponse || typeof publishResponse !== 'object') {
+                    if (!this.continueOnFail()) {
+                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid publish response format. Expected object, got: ${typeof publishResponse}. Response: ${JSON.stringify(publishResponse)}`, { itemIndex });
+                    }
+                    returnItems.push({ json: { response: publishResponse }, pairedItem: { item: itemIndex } });
                     continue;
                 }
                 returnItems.push({ json: publishResponse, pairedItem: { item: itemIndex } });
@@ -1716,7 +2530,7 @@ class Instagram {
                 let errorItem;
                 const errorWithGraph = error;
                 if (errorWithGraph.response !== undefined) {
-                    const graphApiErrors = (_6 = (_5 = errorWithGraph.response.body) === null || _5 === void 0 ? void 0 : _5.error) !== null && _6 !== void 0 ? _6 : {};
+                    const graphApiErrors = (_10 = (_9 = errorWithGraph.response.body) === null || _9 === void 0 ? void 0 : _9.error) !== null && _10 !== void 0 ? _10 : {};
                     errorItem = {
                         statusCode: errorWithGraph.statusCode,
                         ...graphApiErrors,

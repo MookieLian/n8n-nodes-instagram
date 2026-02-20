@@ -27,7 +27,7 @@ export const reelsResource: ResourceHandler = {
 	},
 	fields: reelsFields,
 	pollIntervalMs: 2000,
-	maxPollAttempts: 80,
+	maxPollAttempts: 40, // Reduced from 80 - containers usually ready within 40 attempts (~80 seconds max)
 	publishRetryDelay: 2000,
 	publishMaxAttempts: 6,
 	buildMediaPayload(this: IExecuteFunctions, itemIndex: number): IDataObject {

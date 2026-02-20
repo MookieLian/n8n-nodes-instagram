@@ -26,7 +26,7 @@ exports.reelsResource = {
     },
     fields: reelsFields,
     pollIntervalMs: 2000,
-    maxPollAttempts: 80,
+    maxPollAttempts: 40,
     publishRetryDelay: 2000,
     publishMaxAttempts: 6,
     buildMediaPayload(itemIndex) {

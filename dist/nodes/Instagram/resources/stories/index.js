@@ -9,9 +9,9 @@ exports.storiesResource = {
         description: 'Publish a story',
     },
     fields: [],
-    pollIntervalMs: 3000,
-    maxPollAttempts: 80,
-    publishRetryDelay: 3000,
+    pollIntervalMs: 2000,
+    maxPollAttempts: 40,
+    publishRetryDelay: 2000,
     publishMaxAttempts: 6,
     buildMediaPayload(itemIndex) {
         const videoUrl = this.getNodeParameter('videoUrl', itemIndex);

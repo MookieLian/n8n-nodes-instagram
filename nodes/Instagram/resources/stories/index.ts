@@ -9,9 +9,9 @@ export const storiesResource: ResourceHandler = {
 		description: 'Publish a story',
 	},
 	fields: [],
-	pollIntervalMs: 3000,
-	maxPollAttempts: 80,
-	publishRetryDelay: 3000,
+	pollIntervalMs: 2000, // Reduced from 3000ms for faster polling
+	maxPollAttempts: 40, // Reduced from 80 - containers usually ready within 40 attempts (~80 seconds max)
+	publishRetryDelay: 2000, // Reduced from 3000ms
 	publishMaxAttempts: 6,
 	buildMediaPayload(this: IExecuteFunctions, itemIndex: number) {
 		const videoUrl = this.getNodeParameter('videoUrl', itemIndex) as string;

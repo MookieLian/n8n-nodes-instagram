@@ -846,6 +846,22 @@ export class Instagram implements INodeType {
 			pollIntervalMs: number;
 			maxPollAttempts: number;
 		}) => {
+			if (!creationId || typeof creationId !== 'string') {
+				throw new NodeOperationError(
+					this.getNode(),
+					`Invalid creation ID provided: ${creationId}. Creation ID must be a non-empty string.`,
+					{ itemIndex },
+				);
+			}
+
+			if (!graphApiVersion || typeof graphApiVersion !== 'string') {
+				throw new NodeOperationError(
+					this.getNode(),
+					`Invalid Graph API version provided: ${graphApiVersion}. Graph API version must be a non-empty string.`,
+					{ itemIndex },
+				);
+			}
+
 			const statusUri = `https://${hostUrl}/${graphApiVersion}/${creationId}`;
 			const statusFields = ['status_code', 'status'];
 
@@ -862,44 +878,130 @@ export class Instagram implements INodeType {
 			};
 
 			let lastStatus: string | undefined;
+			let lastError: unknown;
+			let consecutiveErrors = 0;
+			const maxConsecutiveErrors = 3; // Fail fast after 3 consecutive errors
+			const startTime = Date.now();
+			const maxTotalTimeMs = 90000; // Maximum 90 seconds total polling time
 
 			for (let attempt = 1; attempt <= maxPollAttempts; attempt++) {
-				const statusResponse = (await this.helpers.httpRequestWithAuthentication.call(
-					this,
-					'instagramApi',
-					pollRequestOptions,
-				)) as IDataObject;
-				const statuses = statusFields
-					.map((field) => statusResponse[field as keyof IDataObject])
-					.filter((value): value is string => typeof value === 'string')
-					.map((value) => value.toUpperCase());
-
-				if (statuses.length > 0) {
-					lastStatus = statuses[0];
-				}
-
-				if (statuses.some((status) => READY_STATUSES.has(status))) {
-					return;
-				}
-
-				if (statuses.some((status) => ERROR_STATUSES.has(status))) {
+				// Check if we've exceeded maximum total time
+				const elapsedTime = Date.now() - startTime;
+				if (elapsedTime > maxTotalTimeMs) {
 					throw new NodeOperationError(
 						this.getNode(),
-						`Media container reported error status (${statuses.join(', ')}) while waiting to publish.`,
+						`Polling timeout: Exceeded maximum polling time of ${maxTotalTimeMs / 1000} seconds. Container ID: ${creationId}, Last known status: ${lastStatus ?? 'unknown'}, Attempts: ${attempt}/${maxPollAttempts}.`,
 						{ itemIndex },
 					);
 				}
 
-				// Optimize polling: use shorter intervals for first few attempts, then use configured interval
-				// This helps catch containers that become ready quickly without unnecessary delays
-				const effectiveInterval =
-					attempt <= 3 ? Math.min(pollIntervalMs, 1500) : pollIntervalMs;
-				await sleep(effectiveInterval);
+				try {
+					const statusResponse = (await this.helpers.httpRequestWithAuthentication.call(
+						this,
+						'instagramApi',
+						pollRequestOptions,
+					)) as IDataObject;
+
+					if (!statusResponse || typeof statusResponse !== 'object') {
+						consecutiveErrors++;
+						if (consecutiveErrors >= maxConsecutiveErrors) {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Invalid response format received while polling container status (${consecutiveErrors} consecutive errors). Expected object, got: ${typeof statusResponse}. Response: ${JSON.stringify(statusResponse)}. Container ID: ${creationId}.`,
+								{ itemIndex },
+							);
+						}
+						// Continue with shorter interval on error
+						const errorInterval = Math.min(pollIntervalMs, 1000);
+						await sleep(errorInterval);
+						continue;
+					}
+
+					// Reset consecutive error counter on successful response
+					consecutiveErrors = 0;
+
+					const statuses = statusFields
+						.map((field) => statusResponse[field as keyof IDataObject])
+						.filter((value): value is string => typeof value === 'string')
+						.map((value) => value.toUpperCase());
+
+					if (statuses.length > 0) {
+						lastStatus = statuses[0];
+					}
+
+					if (statuses.some((status) => READY_STATUSES.has(status))) {
+						return;
+					}
+
+					if (statuses.some((status) => ERROR_STATUSES.has(status))) {
+						// Extract additional error details if available
+						const errorMessage = statusResponse.error_message as string | undefined;
+						const errorDetails = errorMessage
+							? ` Error details: ${errorMessage}`
+							: '';
+						throw new NodeOperationError(
+							this.getNode(),
+							`Media container reported error status (${statuses.join(', ')}) while waiting to publish. Container ID: ${creationId}, Attempt: ${attempt}/${maxPollAttempts}.${errorDetails}`,
+							{ itemIndex },
+						);
+					}
+
+					// Adaptive polling: Use progressively longer intervals
+					// - First 10 attempts: 500ms (very aggressive for quick containers)
+					// - Next 10 attempts: 1000ms (moderate)
+					// - Remaining attempts: configured interval (normal)
+					let effectiveInterval: number;
+					if (attempt <= 10) {
+						effectiveInterval = 500; // Very aggressive for first 10 attempts (~5 seconds)
+					} else if (attempt <= 20) {
+						effectiveInterval = 1000; // Moderate for next 10 attempts (~10 seconds)
+					} else {
+						effectiveInterval = pollIntervalMs; // Normal interval for remaining attempts
+					}
+					await sleep(effectiveInterval);
+				} catch (error) {
+					lastError = error;
+					consecutiveErrors++;
+					
+					// If it's a known error status or NodeOperationError, rethrow it immediately
+					if (error instanceof NodeOperationError) {
+						throw error;
+					}
+
+					// Check if error indicates container failure (e.g., 404, invalid container)
+					const errorMessage = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+					if (
+						errorMessage.includes('invalid') ||
+						errorMessage.includes('not found') ||
+						errorMessage.includes('404') ||
+						errorMessage.includes('does not exist') ||
+						(consecutiveErrors >= maxConsecutiveErrors)
+					) {
+						throw new NodeOperationError(
+							this.getNode(),
+							`Failed to poll container status after ${attempt} attempts (${consecutiveErrors} consecutive errors). Container may be invalid or failed. Last error: ${error instanceof Error ? error.message : String(error)}. Container ID: ${creationId}, Last known status: ${lastStatus ?? 'unknown'}.`,
+							{ itemIndex },
+						);
+					}
+
+					// For other errors, continue polling but with shorter interval
+					if (attempt < maxPollAttempts) {
+						const errorInterval = Math.min(pollIntervalMs, 1000);
+						await sleep(errorInterval);
+						continue;
+					}
+					// If this was the last attempt, throw with context
+					throw new NodeOperationError(
+						this.getNode(),
+						`Failed to poll container status after ${maxPollAttempts} attempts. Last error: ${error instanceof Error ? error.message : String(error)}. Container ID: ${creationId}, Last known status: ${lastStatus ?? 'unknown'}.`,
+						{ itemIndex },
+					);
+				}
 			}
 
 			throw new NodeOperationError(
 				this.getNode(),
-				`Timed out waiting for container to become ready. Last known status: ${lastStatus ?? 'unknown'}.`,
+				`Timed out waiting for container to become ready after ${maxPollAttempts} attempts. Last known status: ${lastStatus ?? 'unknown'}. Container ID: ${creationId}. Last error: ${lastError instanceof Error ? lastError.message : lastError ? String(lastError) : 'none'}.`,
 				{ itemIndex },
 			);
 		};
@@ -934,17 +1036,134 @@ export class Instagram implements INodeType {
 
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			try {
-				const resource = this.getNodeParameter('resource', itemIndex) as string;
-				const operation = this.getNodeParameter('operation', itemIndex) as string;
+				let resource: string;
+				let operation: string;
+				try {
+					resource = this.getNodeParameter('resource', itemIndex) as string;
+					if (!resource || typeof resource !== 'string') {
+						throw new NodeOperationError(
+							this.getNode(),
+							`Invalid or missing resource parameter at item index ${itemIndex}. Resource must be a non-empty string.`,
+							{ itemIndex },
+						);
+					}
+				} catch (error) {
+					if (error instanceof NodeOperationError) {
+						throw error;
+					}
+					throw new NodeOperationError(
+						this.getNode(),
+						`Failed to get resource parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+						{ itemIndex },
+					);
+				}
+
+				try {
+					operation = this.getNodeParameter('operation', itemIndex) as string;
+					if (!operation || typeof operation !== 'string') {
+						throw new NodeOperationError(
+							this.getNode(),
+							`Invalid or missing operation parameter at item index ${itemIndex}. Operation must be a non-empty string.`,
+							{ itemIndex },
+						);
+					}
+				} catch (error) {
+					if (error instanceof NodeOperationError) {
+						throw error;
+					}
+					throw new NodeOperationError(
+						this.getNode(),
+						`Failed to get operation parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+						{ itemIndex },
+					);
+				}
 
 				if (resource === 'messaging') {
-					const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
-					const accountId = this.getNodeParameter('node', itemIndex) as string;
+					let graphApiVersion: string;
+					let accountId: string;
+					try {
+						graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
+						if (!graphApiVersion || typeof graphApiVersion !== 'string') {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Invalid or missing Graph API version parameter at item index ${itemIndex}. Graph API version must be a non-empty string (e.g., 'v22.0').`,
+								{ itemIndex },
+							);
+						}
+					} catch (error) {
+						if (error instanceof NodeOperationError) {
+							throw error;
+						}
+						throw new NodeOperationError(
+							this.getNode(),
+							`Failed to get Graph API version parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+							{ itemIndex },
+						);
+					}
+
+					try {
+						accountId = this.getNodeParameter('node', itemIndex) as string;
+						if (!accountId || typeof accountId !== 'string') {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Invalid or missing account ID (node) parameter at item index ${itemIndex}. Account ID must be a non-empty string.`,
+								{ itemIndex },
+							);
+						}
+					} catch (error) {
+						if (error instanceof NodeOperationError) {
+							throw error;
+						}
+						throw new NodeOperationError(
+							this.getNode(),
+							`Failed to get account ID (node) parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+							{ itemIndex },
+						);
+					}
 
 					try {
 						if (operation === 'sendMessage') {
-							const recipientId = this.getNodeParameter('recipientId', itemIndex) as string;
-							const text = this.getNodeParameter('messageText', itemIndex) as string;
+							let recipientId: string;
+							let text: string;
+							try {
+								recipientId = this.getNodeParameter('recipientId', itemIndex) as string;
+								if (!recipientId || typeof recipientId !== 'string') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid or missing recipient ID parameter at item index ${itemIndex}. Recipient ID must be a non-empty string.`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get recipient ID parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
+
+							try {
+								text = this.getNodeParameter('messageText', itemIndex) as string;
+								if (!text || typeof text !== 'string') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid or missing message text parameter at item index ${itemIndex}. Message text must be a non-empty string.`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get message text parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							const url = `https://${hostUrl}/${graphApiVersion}/${accountId}/messages`;
 
@@ -966,11 +1185,31 @@ export class Instagram implements INodeType {
 								json: true,
 							};
 
-							const response = (await this.helpers.httpRequestWithAuthentication.call(
-								this,
-								'instagramApi',
-								requestOptions,
-							)) as IDataObject;
+							let response: IDataObject;
+							try {
+								response = (await this.helpers.httpRequestWithAuthentication.call(
+									this,
+									'instagramApi',
+									requestOptions,
+								)) as IDataObject;
+
+								if (!response || typeof response !== 'object') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid response format received from send message API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to send message via Instagram Messaging API. Account ID: ${accountId}, Recipient ID: ${recipientId}. Error: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
 							continue;
@@ -1024,19 +1263,36 @@ export class Instagram implements INodeType {
 								(this.getNodeParameter('accessToken', itemIndex, '') as string | undefined) ?? '';
 
 							if (!token) {
-								const credentials = (await this.getCredentials('instagramApi')) as
-									| {
-											accessToken?: string;
-									  }
-									| null;
+								let credentials;
+								try {
+									credentials = (await this.getCredentials('instagramApi')) as
+										| {
+												accessToken?: string;
+										  }
+										| null;
+								} catch (error) {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Failed to retrieve Instagram API credentials: ${error instanceof Error ? error.message : String(error)}`,
+										{ itemIndex },
+									);
+								}
+
+								if (!credentials) {
+									throw new NodeOperationError(
+										this.getNode(),
+										'Instagram API credentials not found. Please configure the Instagram API credential.',
+										{ itemIndex },
+									);
+								}
 
 								token = credentials?.accessToken ?? '';
 							}
 
-							if (!token) {
+							if (!token || typeof token !== 'string') {
 								throw new NodeOperationError(
 									this.getNode(),
-									'No access token provided and no access token found in the Instagram API credential.',
+									'No access token provided and no access token found in the Instagram API credential. Please provide an access token or configure it in the credential.',
 									{ itemIndex },
 								);
 							}
@@ -1055,21 +1311,80 @@ export class Instagram implements INodeType {
 								json: true,
 							};
 
-							const response = (await this.helpers.httpRequest.call(
-								this,
-								requestOptions,
-							)) as IDataObject;
+							let response: IDataObject;
+							try {
+								response = (await this.helpers.httpRequest.call(
+									this,
+									requestOptions,
+								)) as IDataObject;
+
+								if (!response || typeof response !== 'object') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid response format received from refresh access token API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to refresh access token: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
 							continue;
 						}
 
 						if (operation === 'exchangeAccessToken') {
-							const shortLivedToken = this.getNodeParameter(
-								'shortLivedAccessToken',
-								itemIndex,
-							) as string;
-							const appSecret = this.getNodeParameter('appSecret', itemIndex) as string;
+							let shortLivedToken: string;
+							let appSecret: string;
+							try {
+								shortLivedToken = this.getNodeParameter(
+									'shortLivedAccessToken',
+									itemIndex,
+								) as string;
+								if (!shortLivedToken || typeof shortLivedToken !== 'string') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid or missing short-lived access token parameter at item index ${itemIndex}. Short-lived access token must be a non-empty string.`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get short-lived access token parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
+
+							try {
+								appSecret = this.getNodeParameter('appSecret', itemIndex) as string;
+								if (!appSecret || typeof appSecret !== 'string') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid or missing app secret parameter at item index ${itemIndex}. App secret must be a non-empty string.`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get app secret parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							const url = 'https://graph.instagram.com/access_token';
 							const requestOptions: IHttpRequestOptions = {
@@ -1086,10 +1401,30 @@ export class Instagram implements INodeType {
 								json: true,
 							};
 
-							const response = (await this.helpers.httpRequest.call(
-								this,
-								requestOptions,
-							)) as IDataObject;
+							let response: IDataObject;
+							try {
+								response = (await this.helpers.httpRequest.call(
+									this,
+									requestOptions,
+								)) as IDataObject;
+
+								if (!response || typeof response !== 'object') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid response format received from exchange access token API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to exchange access token: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
 							continue;
@@ -1109,11 +1444,31 @@ export class Instagram implements INodeType {
 								json: true,
 							};
 
-							const response = (await this.helpers.httpRequestWithAuthentication.call(
-								this,
-								'instagramApi',
-								requestOptions,
-							)) as IDataObject;
+							let response: IDataObject;
+							try {
+								response = (await this.helpers.httpRequestWithAuthentication.call(
+									this,
+									'instagramApi',
+									requestOptions,
+								)) as IDataObject;
+
+								if (!response || typeof response !== 'object') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid response format received from /me endpoint. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get user profile from /me endpoint: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
 							continue;
@@ -1169,17 +1524,108 @@ export class Instagram implements INodeType {
 						return typeof apiMsg === 'string' ? apiMsg : (e?.message as string) ?? String(error);
 					};
 					try {
-						const node = this.getNodeParameter('node', itemIndex) as string;
-						const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
-						const caption = this.getNodeParameter('caption', itemIndex) as string;
-						const carouselMedia = this.getNodeParameter('carouselMedia', itemIndex, { mediaItem: [] }) as {
+						let node: string;
+						let graphApiVersion: string;
+						let caption: string;
+						let carouselMedia: {
 							mediaItem?: Array<{ mediaType: string; imageUrl?: string; videoUrl?: string }>;
 						};
+
+						try {
+							node = this.getNodeParameter('node', itemIndex) as string;
+							if (!node || typeof node !== 'string') {
+								throw new NodeOperationError(
+									this.getNode(),
+									`Invalid or missing node (account ID) parameter at item index ${itemIndex}. Node must be a non-empty string.`,
+									{ itemIndex },
+								);
+							}
+						} catch (error) {
+							if (error instanceof NodeOperationError) {
+								throw error;
+							}
+							throw new NodeOperationError(
+								this.getNode(),
+								`Failed to get node parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+								{ itemIndex },
+							);
+						}
+
+						try {
+							graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
+							if (!graphApiVersion || typeof graphApiVersion !== 'string') {
+								throw new NodeOperationError(
+									this.getNode(),
+									`Invalid or missing Graph API version parameter at item index ${itemIndex}. Graph API version must be a non-empty string (e.g., 'v22.0').`,
+									{ itemIndex },
+								);
+							}
+						} catch (error) {
+							if (error instanceof NodeOperationError) {
+								throw error;
+							}
+							throw new NodeOperationError(
+								this.getNode(),
+								`Failed to get Graph API version parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+								{ itemIndex },
+							);
+						}
+
+						try {
+							caption = this.getNodeParameter('caption', itemIndex) as string;
+							if (typeof caption !== 'string') {
+								throw new NodeOperationError(
+									this.getNode(),
+									`Invalid caption parameter at item index ${itemIndex}. Caption must be a string.`,
+									{ itemIndex },
+								);
+							}
+						} catch (error) {
+							if (error instanceof NodeOperationError) {
+								throw error;
+							}
+							throw new NodeOperationError(
+								this.getNode(),
+								`Failed to get caption parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+								{ itemIndex },
+							);
+						}
+
+						try {
+							carouselMedia = this.getNodeParameter('carouselMedia', itemIndex, { mediaItem: [] }) as {
+								mediaItem?: Array<{ mediaType: string; imageUrl?: string; videoUrl?: string }>;
+							};
+							if (!carouselMedia || typeof carouselMedia !== 'object') {
+								throw new NodeOperationError(
+									this.getNode(),
+									`Invalid carousel media parameter at item index ${itemIndex}. Carousel media must be an object.`,
+									{ itemIndex },
+								);
+							}
+						} catch (error) {
+							if (error instanceof NodeOperationError) {
+								throw error;
+							}
+							throw new NodeOperationError(
+								this.getNode(),
+								`Failed to get carousel media parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+								{ itemIndex },
+							);
+						}
+
 						const mediaItems = carouselMedia?.mediaItem ?? [];
+						if (!Array.isArray(mediaItems)) {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Invalid carousel media items format at item index ${itemIndex}. Media items must be an array.`,
+								{ itemIndex },
+							);
+						}
+
 						if (mediaItems.length < 2 || mediaItems.length > 10) {
 							throw new NodeOperationError(
 								this.getNode(),
-								'Carousel must have between 2 and 10 media items.',
+								`Carousel must have between 2 and 10 media items. Found ${mediaItems.length} items at item index ${itemIndex}.`,
 								{ itemIndex },
 							);
 						}
@@ -1189,13 +1635,38 @@ export class Instagram implements INodeType {
 						const mediaUri = `https://${hostUrl}/${graphApiVersion}/${node}/media`;
 						for (let i = 0; i < mediaItems.length; i++) {
 							const item = mediaItems[i];
-							const isVideo = item.mediaType === 'video';
-							const mediaLabel = `Carousel item ${i + 1} (${isVideo ? 'video' : 'image'})`;
-							const url = isVideo ? (item.videoUrl ?? '').trim() : (item.imageUrl ?? '').trim();
-							if (!url) {
+							if (!item || typeof item !== 'object') {
 								throw new NodeOperationError(
 									this.getNode(),
-									`${mediaLabel}: ${isVideo ? 'Video URL' : 'Image URL'} is required.`,
+									`Invalid carousel media item at index ${i} (item ${i + 1} of ${mediaItems.length}) at item index ${itemIndex}. Media item must be an object.`,
+									{ itemIndex },
+								);
+							}
+
+							const isVideo = item.mediaType === 'video';
+							const mediaLabel = `Carousel item ${i + 1} (${isVideo ? 'video' : 'image'})`;
+
+							if (!item.mediaType || typeof item.mediaType !== 'string') {
+								throw new NodeOperationError(
+									this.getNode(),
+									`${mediaLabel}: Media type is required and must be either 'image' or 'video'.`,
+									{ itemIndex },
+								);
+							}
+
+							if (item.mediaType !== 'image' && item.mediaType !== 'video') {
+								throw new NodeOperationError(
+									this.getNode(),
+									`${mediaLabel}: Invalid media type '${item.mediaType}'. Media type must be either 'image' or 'video'.`,
+									{ itemIndex },
+								);
+							}
+
+							const url = isVideo ? (item.videoUrl ?? '').trim() : (item.imageUrl ?? '').trim();
+							if (!url || typeof url !== 'string') {
+								throw new NodeOperationError(
+									this.getNode(),
+									`${mediaLabel}: ${isVideo ? 'Video URL' : 'Image URL'} is required and must be a non-empty string.`,
 									{ itemIndex },
 								);
 							}
@@ -1224,10 +1695,10 @@ export class Instagram implements INodeType {
 								);
 							}
 							const childId = childResponse.id as string | undefined;
-							if (!childId) {
+							if (!childId || typeof childId !== 'string') {
 								throw new NodeOperationError(
 									this.getNode(),
-									`${mediaLabel}: container creation did not return an id.`,
+									`${mediaLabel}: Container creation did not return a valid ID. Response: ${JSON.stringify(childResponse)}`,
 									{ itemIndex },
 								);
 							}
@@ -1276,10 +1747,10 @@ export class Instagram implements INodeType {
 							);
 						}
 						const carouselContainerId = carouselResponse.id as string | undefined;
-						if (!carouselContainerId) {
+						if (!carouselContainerId || typeof carouselContainerId !== 'string') {
 							throw new NodeOperationError(
 								this.getNode(),
-								'Carousel container creation did not return an id.',
+								`Carousel container creation did not return a valid ID. Response: ${JSON.stringify(carouselResponse)}`,
 								{ itemIndex },
 							);
 						}
@@ -1359,12 +1830,70 @@ export class Instagram implements INodeType {
 				}
 
 				if (resource === 'igHashtag') {
-					const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
-					const accountId = this.getNodeParameter('node', itemIndex) as string;
+					let graphApiVersion: string;
+					let accountId: string;
+					try {
+						graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
+						if (!graphApiVersion || typeof graphApiVersion !== 'string') {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Invalid or missing Graph API version parameter at item index ${itemIndex}. Graph API version must be a non-empty string (e.g., 'v22.0').`,
+								{ itemIndex },
+							);
+						}
+					} catch (error) {
+						if (error instanceof NodeOperationError) {
+							throw error;
+						}
+						throw new NodeOperationError(
+							this.getNode(),
+							`Failed to get Graph API version parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+							{ itemIndex },
+						);
+					}
+
+					try {
+						accountId = this.getNodeParameter('node', itemIndex) as string;
+						if (!accountId || typeof accountId !== 'string') {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Invalid or missing account ID (node) parameter at item index ${itemIndex}. Account ID must be a non-empty string.`,
+								{ itemIndex },
+							);
+						}
+					} catch (error) {
+						if (error instanceof NodeOperationError) {
+							throw error;
+						}
+						throw new NodeOperationError(
+							this.getNode(),
+							`Failed to get account ID (node) parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+							{ itemIndex },
+						);
+					}
 
 					try {
 						if (operation === 'search') {
-							const hashtagName = this.getNodeParameter('hashtagName', itemIndex) as string;
+							let hashtagName: string;
+							try {
+								hashtagName = this.getNodeParameter('hashtagName', itemIndex) as string;
+								if (!hashtagName || typeof hashtagName !== 'string') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid or missing hashtag name parameter at item index ${itemIndex}. Hashtag name must be a non-empty string (without the # symbol).`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get hashtag name parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							const url = `https://${hostUrl}/${graphApiVersion}/ig_hashtag_search`;
 							const requestOptions: IHttpRequestOptions = {
@@ -1380,20 +1909,100 @@ export class Instagram implements INodeType {
 								json: true,
 							};
 
-							const response = (await this.helpers.httpRequestWithAuthentication.call(
-								this,
-								'instagramApi',
-								requestOptions,
-							)) as IDataObject;
+							let response: IDataObject;
+							try {
+								response = (await this.helpers.httpRequestWithAuthentication.call(
+									this,
+									'instagramApi',
+									requestOptions,
+								)) as IDataObject;
+
+								if (!response || typeof response !== 'object') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid response format received from hashtag search API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to search hashtag '${hashtagName}' for account ${accountId}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
 							continue;
 						}
 
 						if (operation === 'getRecentMedia' || operation === 'getTopMedia') {
-							const hashtagId = this.getNodeParameter('hashtagId', itemIndex) as string;
-							const returnAll = this.getNodeParameter('returnAll', itemIndex, false) as boolean;
-							const limit = this.getNodeParameter('limit', itemIndex, 0) as number;
+							let hashtagId: string;
+							let returnAll: boolean;
+							let limit: number;
+
+							try {
+								hashtagId = this.getNodeParameter('hashtagId', itemIndex) as string;
+								if (!hashtagId || typeof hashtagId !== 'string') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid or missing hashtag ID parameter at item index ${itemIndex}. Hashtag ID must be a non-empty string.`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get hashtag ID parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
+
+							try {
+								returnAll = this.getNodeParameter('returnAll', itemIndex, false) as boolean;
+								if (typeof returnAll !== 'boolean') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid returnAll parameter at item index ${itemIndex}. ReturnAll must be a boolean.`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get returnAll parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
+
+							try {
+								limit = this.getNodeParameter('limit', itemIndex, 0) as number;
+								if (typeof limit !== 'number' || limit < 0) {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid limit parameter at item index ${itemIndex}. Limit must be a non-negative number.`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get limit parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							const edge = operation === 'getRecentMedia' ? 'recent_media' : 'top_media';
 							const baseUrl = `https://${hostUrl}/${graphApiVersion}/${hashtagId}/${edge}`;
@@ -1416,7 +2025,9 @@ export class Instagram implements INodeType {
 							const hardCap = returnAll ? 5000 : limit;
 
 							let hasMore = true;
+							let pageNumber = 0;
 							while (hasMore) {
+								pageNumber++;
 								const remaining = returnAll ? undefined : hardCap - accumulated.length;
 								const pageLimit = remaining !== undefined ? Math.min(remaining, 50) : 50;
 
@@ -1440,13 +2051,40 @@ export class Instagram implements INodeType {
 									json: true,
 								};
 
-								const response = (await this.helpers.httpRequestWithAuthentication.call(
-									this,
-									'instagramApi',
-									requestOptions,
-								)) as IDataObject;
+								let response: IDataObject;
+								try {
+									response = (await this.helpers.httpRequestWithAuthentication.call(
+										this,
+										'instagramApi',
+										requestOptions,
+									)) as IDataObject;
+
+									if (!response || typeof response !== 'object') {
+										throw new NodeOperationError(
+											this.getNode(),
+											`Invalid response format received from ${edge} API at page ${pageNumber}. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`,
+											{ itemIndex },
+										);
+									}
+								} catch (error) {
+									if (error instanceof NodeOperationError) {
+										throw error;
+									}
+									throw new NodeOperationError(
+										this.getNode(),
+										`Failed to fetch ${edge} for hashtag ${hashtagId} at page ${pageNumber}: ${error instanceof Error ? error.message : String(error)}`,
+										{ itemIndex },
+									);
+								}
 
 								const pageData = (response.data as IDataObject[] | undefined) ?? [];
+								if (!Array.isArray(pageData)) {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid data format in response from ${edge} API at page ${pageNumber}. Expected array, got: ${typeof pageData}. Response: ${JSON.stringify(response)}`,
+										{ itemIndex },
+									);
+								}
 								accumulated.push(...pageData);
 
 								const paging = response.paging as
@@ -1509,8 +2147,47 @@ export class Instagram implements INodeType {
 				}
 
 				if (resource === 'page') {
-					const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
-					const pageId = this.getNodeParameter('pageId', itemIndex) as string;
+					let graphApiVersion: string;
+					let pageId: string;
+					try {
+						graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
+						if (!graphApiVersion || typeof graphApiVersion !== 'string') {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Invalid or missing Graph API version parameter at item index ${itemIndex}. Graph API version must be a non-empty string (e.g., 'v22.0').`,
+								{ itemIndex },
+							);
+						}
+					} catch (error) {
+						if (error instanceof NodeOperationError) {
+							throw error;
+						}
+						throw new NodeOperationError(
+							this.getNode(),
+							`Failed to get Graph API version parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+							{ itemIndex },
+						);
+					}
+
+					try {
+						pageId = this.getNodeParameter('pageId', itemIndex) as string;
+						if (!pageId || typeof pageId !== 'string') {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Invalid or missing page ID parameter at item index ${itemIndex}. Page ID must be a non-empty string.`,
+								{ itemIndex },
+							);
+						}
+					} catch (error) {
+						if (error instanceof NodeOperationError) {
+							throw error;
+						}
+						throw new NodeOperationError(
+							this.getNode(),
+							`Failed to get page ID parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+							{ itemIndex },
+						);
+					}
 
 					try {
 						if (operation === 'getInstagramAccount') {
@@ -1527,11 +2204,31 @@ export class Instagram implements INodeType {
 								json: true,
 							};
 
-							const response = (await this.helpers.httpRequestWithAuthentication.call(
-								this,
-								'instagramApi',
-								requestOptions,
-							)) as IDataObject;
+							let response: IDataObject;
+							try {
+								response = (await this.helpers.httpRequestWithAuthentication.call(
+									this,
+									'instagramApi',
+									requestOptions,
+								)) as IDataObject;
+
+								if (!response || typeof response !== 'object') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid response format received from page API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get Instagram account for page ${pageId}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
 							continue;
@@ -1579,8 +2276,47 @@ export class Instagram implements INodeType {
 				}
 
 				if (resource === 'igUser') {
-					const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
-					const accountId = this.getNodeParameter('node', itemIndex) as string;
+					let graphApiVersion: string;
+					let accountId: string;
+					try {
+						graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
+						if (!graphApiVersion || typeof graphApiVersion !== 'string') {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Invalid or missing Graph API version parameter at item index ${itemIndex}. Graph API version must be a non-empty string (e.g., 'v22.0').`,
+								{ itemIndex },
+							);
+						}
+					} catch (error) {
+						if (error instanceof NodeOperationError) {
+							throw error;
+						}
+						throw new NodeOperationError(
+							this.getNode(),
+							`Failed to get Graph API version parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+							{ itemIndex },
+						);
+					}
+
+					try {
+						accountId = this.getNodeParameter('node', itemIndex) as string;
+						if (!accountId || typeof accountId !== 'string') {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Invalid or missing account ID (node) parameter at item index ${itemIndex}. Account ID must be a non-empty string.`,
+								{ itemIndex },
+							);
+						}
+					} catch (error) {
+						if (error instanceof NodeOperationError) {
+							throw error;
+						}
+						throw new NodeOperationError(
+							this.getNode(),
+							`Failed to get account ID (node) parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+							{ itemIndex },
+						);
+					}
 
 					try {
 						if (operation === 'get') {
@@ -1607,19 +2343,79 @@ export class Instagram implements INodeType {
 								json: true,
 							};
 
-							const response = (await this.helpers.httpRequestWithAuthentication.call(
-								this,
-								'instagramApi',
-								requestOptions,
-							)) as IDataObject;
+							let response: IDataObject;
+							try {
+								response = (await this.helpers.httpRequestWithAuthentication.call(
+									this,
+									'instagramApi',
+									requestOptions,
+								)) as IDataObject;
+
+								if (!response || typeof response !== 'object') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid response format received from IG User API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get IG User profile for account ${accountId}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
 							continue;
 						}
 
 						if (operation === 'getMedia') {
-							const returnAll = this.getNodeParameter('returnAll', itemIndex, false) as boolean;
-							const limit = this.getNodeParameter('limit', itemIndex, 0) as number;
+							let returnAll: boolean;
+							let limit: number;
+
+							try {
+								returnAll = this.getNodeParameter('returnAll', itemIndex, false) as boolean;
+								if (typeof returnAll !== 'boolean') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid returnAll parameter at item index ${itemIndex}. ReturnAll must be a boolean.`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get returnAll parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
+
+							try {
+								limit = this.getNodeParameter('limit', itemIndex, 0) as number;
+								if (typeof limit !== 'number' || limit < 0) {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid limit parameter at item index ${itemIndex}. Limit must be a non-negative number.`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get limit parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							const baseUrl = `https://${hostUrl}/${graphApiVersion}/${accountId}/media`;
 							const fields = [
@@ -1640,7 +2436,9 @@ export class Instagram implements INodeType {
 							const hardCap = returnAll ? 5000 : limit;
 
 							let hasMore = true;
+							let pageNumber = 0;
 							while (hasMore) {
+								pageNumber++;
 								const remaining = returnAll ? undefined : hardCap - accumulated.length;
 								const pageLimit = remaining !== undefined ? Math.min(remaining, 100) : 100;
 
@@ -1663,13 +2461,40 @@ export class Instagram implements INodeType {
 									json: true,
 								};
 
-								const response = (await this.helpers.httpRequestWithAuthentication.call(
-									this,
-									'instagramApi',
-									requestOptions,
-								)) as IDataObject;
+								let response: IDataObject;
+								try {
+									response = (await this.helpers.httpRequestWithAuthentication.call(
+										this,
+										'instagramApi',
+										requestOptions,
+									)) as IDataObject;
+
+									if (!response || typeof response !== 'object') {
+										throw new NodeOperationError(
+											this.getNode(),
+											`Invalid response format received from IG User media API at page ${pageNumber}. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`,
+											{ itemIndex },
+										);
+									}
+								} catch (error) {
+									if (error instanceof NodeOperationError) {
+										throw error;
+									}
+									throw new NodeOperationError(
+										this.getNode(),
+										`Failed to fetch media for account ${accountId} at page ${pageNumber}: ${error instanceof Error ? error.message : String(error)}`,
+										{ itemIndex },
+									);
+								}
 
 								const pageData = (response.data as IDataObject[] | undefined) ?? [];
+								if (!Array.isArray(pageData)) {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid data format in response from IG User media API at page ${pageNumber}. Expected array, got: ${typeof pageData}. Response: ${JSON.stringify(response)}`,
+										{ itemIndex },
+									);
+								}
 								accumulated.push(...pageData);
 
 								const paging = response.paging as
@@ -1733,11 +2558,49 @@ export class Instagram implements INodeType {
 				}
 
 				if (resource === 'comments') {
-					const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
+					let graphApiVersion: string;
+					try {
+						graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
+						if (!graphApiVersion || typeof graphApiVersion !== 'string') {
+							throw new NodeOperationError(
+								this.getNode(),
+								`Invalid or missing Graph API version parameter at item index ${itemIndex}. Graph API version must be a non-empty string (e.g., 'v22.0').`,
+								{ itemIndex },
+							);
+						}
+					} catch (error) {
+						if (error instanceof NodeOperationError) {
+							throw error;
+						}
+						throw new NodeOperationError(
+							this.getNode(),
+							`Failed to get Graph API version parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+							{ itemIndex },
+						);
+					}
 
 					try {
 						if (operation === 'list') {
-							const mediaId = this.getNodeParameter('mediaId', itemIndex) as string;
+							let mediaId: string;
+							try {
+								mediaId = this.getNodeParameter('mediaId', itemIndex) as string;
+								if (!mediaId || typeof mediaId !== 'string') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid or missing media ID parameter at item index ${itemIndex}. Media ID must be a non-empty string.`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get media ID parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							const url = `https://${hostUrl}/${graphApiVersion}/${mediaId}/comments`;
 							const requestOptions: IHttpRequestOptions = {
@@ -1749,18 +2612,58 @@ export class Instagram implements INodeType {
 								json: true,
 							};
 
-							const response = (await this.helpers.httpRequestWithAuthentication.call(
-								this,
-								'instagramApi',
-								requestOptions,
-							)) as IDataObject;
+							let response: IDataObject;
+							try {
+								response = (await this.helpers.httpRequestWithAuthentication.call(
+									this,
+									'instagramApi',
+									requestOptions,
+								)) as IDataObject;
+
+								if (!response || typeof response !== 'object') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid response format received from comments list API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to list comments for media ${mediaId}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
 							continue;
 						}
 
 						if (operation === 'hideComment' || operation === 'unhideComment') {
-							const commentId = this.getNodeParameter('commentId', itemIndex) as string;
+							let commentId: string;
+							try {
+								commentId = this.getNodeParameter('commentId', itemIndex) as string;
+								if (!commentId || typeof commentId !== 'string') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid or missing comment ID parameter at item index ${itemIndex}. Comment ID must be a non-empty string.`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get comment ID parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
+
 							const hideValue = operation === 'hideComment';
 							const url = `https://${hostUrl}/${graphApiVersion}/${commentId}`;
 
@@ -1776,18 +2679,58 @@ export class Instagram implements INodeType {
 								json: true,
 							};
 
-							const response = (await this.helpers.httpRequestWithAuthentication.call(
-								this,
-								'instagramApi',
-								requestOptions,
-							)) as IDataObject;
+							let response: IDataObject;
+							try {
+								response = (await this.helpers.httpRequestWithAuthentication.call(
+									this,
+									'instagramApi',
+									requestOptions,
+								)) as IDataObject;
+
+								if (!response || typeof response !== 'object') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid response format received from ${operation} API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to ${operation} for comment ${commentId}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
 							continue;
 						}
 
 						if (operation === 'deleteComment') {
-							const commentId = this.getNodeParameter('commentId', itemIndex) as string;
+							let commentId: string;
+							try {
+								commentId = this.getNodeParameter('commentId', itemIndex) as string;
+								if (!commentId || typeof commentId !== 'string') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid or missing comment ID parameter at item index ${itemIndex}. Comment ID must be a non-empty string.`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get comment ID parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
+
 							const url = `https://${hostUrl}/${graphApiVersion}/${commentId}`;
 
 							const requestOptions: IHttpRequestOptions = {
@@ -1799,18 +2742,58 @@ export class Instagram implements INodeType {
 								json: true,
 							};
 
-							const response = (await this.helpers.httpRequestWithAuthentication.call(
-								this,
-								'instagramApi',
-								requestOptions,
-							)) as IDataObject;
+							let response: IDataObject;
+							try {
+								response = (await this.helpers.httpRequestWithAuthentication.call(
+									this,
+									'instagramApi',
+									requestOptions,
+								)) as IDataObject;
+
+								if (!response || typeof response !== 'object') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid response format received from delete comment API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to delete comment ${commentId}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
 							continue;
 						}
 
 						if (operation === 'disableComments' || operation === 'enableComments') {
-							const mediaId = this.getNodeParameter('mediaId', itemIndex) as string;
+							let mediaId: string;
+							try {
+								mediaId = this.getNodeParameter('mediaId', itemIndex) as string;
+								if (!mediaId || typeof mediaId !== 'string') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid or missing media ID parameter at item index ${itemIndex}. Media ID must be a non-empty string.`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get media ID parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
+
 							const commentEnabled = operation === 'enableComments';
 							const url = `https://${hostUrl}/${graphApiVersion}/${mediaId}`;
 
@@ -1826,20 +2809,100 @@ export class Instagram implements INodeType {
 								json: true,
 							};
 
-							const response = (await this.helpers.httpRequestWithAuthentication.call(
-								this,
-								'instagramApi',
-								requestOptions,
-							)) as IDataObject;
+							let response: IDataObject;
+							try {
+								response = (await this.helpers.httpRequestWithAuthentication.call(
+									this,
+									'instagramApi',
+									requestOptions,
+								)) as IDataObject;
+
+								if (!response || typeof response !== 'object') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid response format received from ${operation} API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to ${operation} for media ${mediaId}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
 							continue;
 						}
 
 						if (operation === 'sendPrivateReply') {
-							const accountId = this.getNodeParameter('node', itemIndex) as string;
-							const commentId = this.getNodeParameter('commentId', itemIndex) as string;
-							const text = this.getNodeParameter('privateReplyText', itemIndex) as string;
+							let accountId: string;
+							let commentId: string;
+							let text: string;
+
+							try {
+								accountId = this.getNodeParameter('node', itemIndex) as string;
+								if (!accountId || typeof accountId !== 'string') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid or missing account ID (node) parameter at item index ${itemIndex}. Account ID must be a non-empty string.`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get account ID (node) parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
+
+							try {
+								commentId = this.getNodeParameter('commentId', itemIndex) as string;
+								if (!commentId || typeof commentId !== 'string') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid or missing comment ID parameter at item index ${itemIndex}. Comment ID must be a non-empty string.`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get comment ID parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
+
+							try {
+								text = this.getNodeParameter('privateReplyText', itemIndex) as string;
+								if (!text || typeof text !== 'string') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid or missing private reply text parameter at item index ${itemIndex}. Private reply text must be a non-empty string.`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get private reply text parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							const url = `https://${hostUrl}/${graphApiVersion}/${accountId}/messages`;
 
@@ -1861,11 +2924,31 @@ export class Instagram implements INodeType {
 								json: true,
 							};
 
-							const response = (await this.helpers.httpRequestWithAuthentication.call(
-								this,
-								'instagramApi',
-								requestOptions,
-							)) as IDataObject;
+							let response: IDataObject;
+							try {
+								response = (await this.helpers.httpRequestWithAuthentication.call(
+									this,
+									'instagramApi',
+									requestOptions,
+								)) as IDataObject;
+
+								if (!response || typeof response !== 'object') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid response format received from send private reply API. Expected object, got: ${typeof response}. Response: ${JSON.stringify(response)}`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to send private reply to comment ${commentId} for account ${accountId}: ${error instanceof Error ? error.message : String(error)}`,
+									{ itemIndex },
+								);
+							}
 
 							returnItems.push({ json: response, pairedItem: { item: itemIndex } });
 							continue;
@@ -1920,14 +3003,97 @@ export class Instagram implements INodeType {
 
 				const handler = instagramResourceHandlers[resource as InstagramResourceType];
 				if (!handler) {
-					throw new NodeOperationError(this.getNode(), `Unsupported resource: ${resource}`, {
-						itemIndex,
-					});
+					throw new NodeOperationError(
+						this.getNode(),
+						`Unsupported resource: ${resource}. Supported resources are: ${Object.keys(instagramResourceHandlers).join(', ')}.`,
+						{ itemIndex },
+					);
 				}
-				const node = this.getNodeParameter('node', itemIndex) as string;
-				const graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
-				const caption = this.getNodeParameter('caption', itemIndex) as string;
-				const additionalFields = this.getNodeParameter('additionalFields', itemIndex, {}) as IDataObject;
+
+				let node: string;
+				let graphApiVersion: string;
+				let caption: string;
+				let additionalFields: IDataObject;
+
+				try {
+					node = this.getNodeParameter('node', itemIndex) as string;
+					if (!node || typeof node !== 'string') {
+						throw new NodeOperationError(
+							this.getNode(),
+							`Invalid or missing node (account ID) parameter at item index ${itemIndex}. Node must be a non-empty string.`,
+							{ itemIndex },
+						);
+					}
+				} catch (error) {
+					if (error instanceof NodeOperationError) {
+						throw error;
+					}
+					throw new NodeOperationError(
+						this.getNode(),
+						`Failed to get node parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+						{ itemIndex },
+					);
+				}
+
+				try {
+					graphApiVersion = this.getNodeParameter('graphApiVersion', itemIndex) as string;
+					if (!graphApiVersion || typeof graphApiVersion !== 'string') {
+						throw new NodeOperationError(
+							this.getNode(),
+							`Invalid or missing Graph API version parameter at item index ${itemIndex}. Graph API version must be a non-empty string (e.g., 'v22.0').`,
+							{ itemIndex },
+						);
+					}
+				} catch (error) {
+					if (error instanceof NodeOperationError) {
+						throw error;
+					}
+					throw new NodeOperationError(
+						this.getNode(),
+						`Failed to get Graph API version parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+						{ itemIndex },
+					);
+				}
+
+				try {
+					caption = this.getNodeParameter('caption', itemIndex) as string;
+					if (typeof caption !== 'string') {
+						throw new NodeOperationError(
+							this.getNode(),
+							`Invalid caption parameter at item index ${itemIndex}. Caption must be a string.`,
+							{ itemIndex },
+						);
+					}
+				} catch (error) {
+					if (error instanceof NodeOperationError) {
+						throw error;
+					}
+					throw new NodeOperationError(
+						this.getNode(),
+						`Failed to get caption parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+						{ itemIndex },
+					);
+				}
+
+				try {
+					additionalFields = this.getNodeParameter('additionalFields', itemIndex, {}) as IDataObject;
+					if (!additionalFields || typeof additionalFields !== 'object') {
+						throw new NodeOperationError(
+							this.getNode(),
+							`Invalid additional fields parameter at item index ${itemIndex}. Additional fields must be an object.`,
+							{ itemIndex },
+						);
+					}
+				} catch (error) {
+					if (error instanceof NodeOperationError) {
+						throw error;
+					}
+					throw new NodeOperationError(
+						this.getNode(),
+						`Failed to get additional fields parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+						{ itemIndex },
+					);
+				}
 				const altText = (additionalFields.altText as string) ?? '';
 				const rawLocationId = additionalFields.locationId as string | undefined;
 				const userTagsCollection = additionalFields.userTags as
@@ -1942,7 +3108,71 @@ export class Instagram implements INodeType {
 
 				// First request: Create media container
 				const mediaUri = `https://${hostUrl}/${graphApiVersion}/${node}/media`;
-				const mediaPayload = handler.buildMediaPayload.call(this, itemIndex);
+				let mediaPayload: IDataObject;
+				try {
+					mediaPayload = handler.buildMediaPayload.call(this, itemIndex);
+					if (!mediaPayload || typeof mediaPayload !== 'object') {
+						throw new NodeOperationError(
+							this.getNode(),
+							`Invalid media payload returned from handler for resource '${resource}' at item index ${itemIndex}. Expected object, got: ${typeof mediaPayload}.`,
+							{ itemIndex },
+						);
+					}
+				} catch (error) {
+					if (error instanceof NodeOperationError) {
+						throw error;
+					}
+					throw new NodeOperationError(
+						this.getNode(),
+						`Failed to build media payload for resource '${resource}' at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+						{ itemIndex },
+					);
+				}
+
+				// Validate video/image URLs before making API call
+				const videoUrl = mediaPayload.video_url as string | undefined;
+				const imageUrl = mediaPayload.image_url as string | undefined;
+				
+				if (videoUrl) {
+					const trimmedUrl = videoUrl.trim();
+					if (!trimmedUrl) {
+						throw new NodeOperationError(
+							this.getNode(),
+							`Video URL is empty for resource '${resource}' at item index ${itemIndex}. Please provide a valid video URL.`,
+							{ itemIndex },
+						);
+					}
+					// Basic URL format validation using regex (to avoid globalThis restriction)
+					const urlPattern = /^https?:\/\/.+/i;
+					if (!urlPattern.test(trimmedUrl)) {
+						throw new NodeOperationError(
+							this.getNode(),
+							`Invalid video URL format for resource '${resource}' at item index ${itemIndex}. URL must be a valid HTTP/HTTPS URL starting with http:// or https://. Provided URL: ${trimmedUrl.substring(0, 100)}${trimmedUrl.length > 100 ? '...' : ''}`,
+							{ itemIndex },
+						);
+					}
+				}
+
+				if (imageUrl) {
+					const trimmedUrl = imageUrl.trim();
+					if (!trimmedUrl) {
+						throw new NodeOperationError(
+							this.getNode(),
+							`Image URL is empty for resource '${resource}' at item index ${itemIndex}. Please provide a valid image URL.`,
+							{ itemIndex },
+						);
+					}
+					// Basic URL format validation using regex (to avoid globalThis restriction)
+					const urlPattern = /^https?:\/\/.+/i;
+					if (!urlPattern.test(trimmedUrl)) {
+						throw new NodeOperationError(
+							this.getNode(),
+							`Invalid image URL format for resource '${resource}' at item index ${itemIndex}. URL must be a valid HTTP/HTTPS URL starting with http:// or https://. Provided URL: ${trimmedUrl.substring(0, 100)}${trimmedUrl.length > 100 ? '...' : ''}`,
+							{ itemIndex },
+						);
+					}
+				}
+
 				const mediaQs: IDataObject = {
 					caption,
 					...mediaPayload,
@@ -2022,31 +3252,99 @@ export class Instagram implements INodeType {
 					json: true,
 				};
 
-				let mediaResponse: IDataObject;
+				let mediaResponse: IDataObject | string;
 				try {
-					mediaResponse = await this.helpers.httpRequestWithAuthentication.call(
+					mediaResponse = (await this.helpers.httpRequestWithAuthentication.call(
 						this,
 						'instagramApi',
 						mediaRequestOptions,
-					);
+					)) as IDataObject | string;
 				} catch (error: unknown) {
-					if (!this.continueOnFail()) {
-						throw new NodeApiError(this.getNode(), error as JsonObject);
-					}
-
-					let errorItem: Record<string, unknown>;
+					// Extract detailed error message for better debugging
+					let errorMessage = 'Unknown error';
+					let errorCode: number | undefined;
+					let errorType: string | undefined;
+					
 					type ResponseErrorType = {
 						statusCode?: number;
 						response?: {
 							body?: {
 								error?: {
+									message?: string;
+									type?: string;
+									code?: number;
+									error_subcode?: number;
 									[key: string]: unknown;
 								};
 							};
 							headers?: Record<string, unknown>;
 						};
+						message?: string;
 					};
+					
 					const err = error as ResponseErrorType;
+					
+					if (err.response?.body?.error) {
+						const graphError = err.response.body.error;
+						errorMessage = graphError.message || errorMessage;
+						errorCode = graphError.code;
+						errorType = graphError.type;
+					} else if (err.message) {
+						errorMessage = err.message;
+					} else if (error instanceof Error) {
+						errorMessage = error.message;
+					} else {
+						errorMessage = String(error);
+					}
+
+					// Check for common URL-related errors and provide helpful messages
+					const lowerErrorMessage = errorMessage.toLowerCase();
+					if (
+						lowerErrorMessage.includes('invalid url') ||
+						lowerErrorMessage.includes('url') ||
+						lowerErrorMessage.includes('not found') ||
+						lowerErrorMessage.includes('404') ||
+						lowerErrorMessage.includes('cannot access') ||
+						lowerErrorMessage.includes('unreachable')
+					) {
+						const urlToCheck = videoUrl || imageUrl || 'provided URL';
+						throw new NodeOperationError(
+							this.getNode(),
+							`Failed to create media container: The ${videoUrl ? 'video' : 'image'} URL appears to be invalid or unreachable. Error: ${errorMessage}${errorCode ? ` (Code: ${errorCode})` : ''}. Please verify that the URL is accessible and points to a valid ${videoUrl ? 'video' : 'image'} file. URL: ${urlToCheck.substring(0, 100)}${urlToCheck.length > 100 ? '...' : ''}`,
+							{ itemIndex },
+						);
+					}
+
+					if (!this.continueOnFail()) {
+						// Create a more detailed error
+						const errorObj = err.response?.body?.error;
+						const detailedError: JsonObject = {
+							message: errorMessage,
+							...(errorCode && { code: errorCode }),
+							...(errorType && { type: errorType }),
+							...(err.statusCode && { statusCode: err.statusCode }),
+						};
+						
+						// Add error details if available (only primitive values)
+						if (errorObj && typeof errorObj === 'object' && !Array.isArray(errorObj)) {
+							Object.keys(errorObj).forEach((key) => {
+								const value = (errorObj as IDataObject)[key];
+								if (
+									value !== undefined &&
+									value !== null &&
+									(typeof value === 'string' ||
+										typeof value === 'number' ||
+										typeof value === 'boolean')
+								) {
+									detailedError[`error_${key}`] = value;
+								}
+							});
+						}
+						
+						throw new NodeApiError(this.getNode(), detailedError);
+					}
+
+					let errorItem: Record<string, unknown>;
 					if (err.response !== undefined) {
 						const graphApiErrors = err.response.body?.error ?? {};
 						errorItem = {
@@ -2062,38 +3360,93 @@ export class Instagram implements INodeType {
 				}
 
 				if (typeof mediaResponse === 'string') {
+					const responseStr = mediaResponse;
 					if (!this.continueOnFail()) {
-						throw new NodeOperationError(this.getNode(), 'Media creation response body is not valid JSON.', {
-							itemIndex,
-						});
+						throw new NodeOperationError(
+							this.getNode(),
+							`Media creation response body is not valid JSON. Received string response: ${responseStr.substring(0, 200)}${responseStr.length > 200 ? '...' : ''}`,
+							{ itemIndex },
+						);
 					}
-					returnItems.push({ json: { message: mediaResponse }, pairedItem: { item: itemIndex } });
+					returnItems.push({ json: { message: responseStr }, pairedItem: { item: itemIndex } });
 					continue;
 				}
 
 				// Extract creation_id from first response
 				const creationId = mediaResponse.id as string | undefined;
-				if (!creationId) {
+				if (!creationId || typeof creationId !== 'string') {
+					// Check if response contains error information
+					const responseData = mediaResponse as IDataObject;
+					const errorObj = responseData.error;
+					const errorMessage =
+						errorObj && typeof errorObj === 'object' && !Array.isArray(errorObj)
+							? ((errorObj as IDataObject).message as string | undefined)
+							: undefined;
+					const errorCode =
+						errorObj && typeof errorObj === 'object' && !Array.isArray(errorObj)
+							? ((errorObj as IDataObject).code as number | undefined)
+							: undefined;
+					
 					if (!this.continueOnFail()) {
+						const errorDetails = errorMessage
+							? ` API Error: ${errorMessage}${errorCode ? ` (Code: ${errorCode})` : ''}`
+							: '';
 						throw new NodeOperationError(
 							this.getNode(),
-							'Media creation response did not contain an id (creation_id).',
+							`Media creation response did not contain a valid id (creation_id).${errorDetails} Response: ${JSON.stringify(mediaResponse)}`,
 							{ itemIndex },
 						);
 					}
-					returnItems.push({ json: { error: 'No creation_id in response', response: mediaResponse }, pairedItem: { item: itemIndex } });
+					returnItems.push({
+						json: {
+							error: 'No creation_id in response',
+							response: mediaResponse,
+							resource,
+							itemIndex,
+							...(errorMessage && { apiError: errorMessage }),
+							...(errorCode && { apiErrorCode: errorCode }),
+						},
+						pairedItem: { item: itemIndex },
+					});
 					continue;
 				}
 
+				// Check if response indicates an error even though we got an ID
+				const responseData = mediaResponse as IDataObject;
+				const responseError = responseData.error;
+				if (responseError && typeof responseError === 'object' && !Array.isArray(responseError)) {
+					const errorObj = responseError as IDataObject;
+					const errorMsg = errorObj.message as string | undefined;
+					const errorCode = errorObj.code as number | undefined;
+					if (!this.continueOnFail()) {
+						throw new NodeOperationError(
+							this.getNode(),
+							`Media container creation returned an error despite providing an ID. Error: ${errorMsg || 'Unknown error'}${errorCode ? ` (Code: ${errorCode})` : ''}. Container ID: ${creationId}. This may indicate the media URL is invalid or inaccessible.`,
+							{ itemIndex },
+						);
+					}
+				}
+
 				// Wait until the container is ready before publishing
-				await waitForContainerReady({
-					creationId,
-					hostUrl,
-					graphApiVersion,
-					itemIndex,
-					pollIntervalMs: handler.pollIntervalMs,
-					maxPollAttempts: handler.maxPollAttempts,
-				});
+				try {
+					await waitForContainerReady({
+						creationId,
+						hostUrl,
+						graphApiVersion,
+						itemIndex,
+						pollIntervalMs: handler.pollIntervalMs,
+						maxPollAttempts: handler.maxPollAttempts,
+					});
+				} catch (error) {
+					if (error instanceof NodeOperationError) {
+						throw error;
+					}
+					throw new NodeOperationError(
+						this.getNode(),
+						`Failed to wait for container to become ready. Creation ID: ${creationId}, Resource: ${resource}. Error: ${error instanceof Error ? error.message : String(error)}`,
+						{ itemIndex },
+					);
+				}
 
 				// Second request: Publish media
 				const publishUri = `https://${hostUrl}/${graphApiVersion}/${node}/media_publish`;
@@ -2113,17 +3466,17 @@ export class Instagram implements INodeType {
 
 				const publishRetryDelay = handler.publishRetryDelay;
 				const publishMaxAttempts = handler.publishMaxAttempts;
-				let publishResponse: IDataObject | undefined;
+				let publishResponse: IDataObject | string | undefined;
 				let publishSucceeded = false;
 				let publishFailedWithError = false;
 
 				for (let attempt = 1; attempt <= publishMaxAttempts; attempt++) {
 					try {
-						publishResponse = await this.helpers.httpRequestWithAuthentication.call(
+						publishResponse = (await this.helpers.httpRequestWithAuthentication.call(
 							this,
 							'instagramApi',
 							publishRequestOptions,
-						);
+						)) as IDataObject | string;
 						publishSucceeded = true;
 						break;
 					} catch (error) {
@@ -2179,16 +3532,30 @@ export class Instagram implements INodeType {
 
 				if (typeof publishResponse === 'string') {
 					if (!this.continueOnFail()) {
-						throw new NodeOperationError(this.getNode(), 'Media publish response body is not valid JSON.', {
-							itemIndex,
-						});
+						throw new NodeOperationError(
+							this.getNode(),
+							`Media publish response body is not valid JSON. Received string response: ${publishResponse.substring(0, 200)}${publishResponse.length > 200 ? '...' : ''}`,
+							{ itemIndex },
+						);
 					}
 					returnItems.push({ json: { message: publishResponse }, pairedItem: { item: itemIndex } });
 					continue;
 				}
 
+				if (!publishResponse || typeof publishResponse !== 'object') {
+					if (!this.continueOnFail()) {
+						throw new NodeOperationError(
+							this.getNode(),
+							`Invalid publish response format. Expected object, got: ${typeof publishResponse}. Response: ${JSON.stringify(publishResponse)}`,
+							{ itemIndex },
+						);
+					}
+					returnItems.push({ json: { response: publishResponse }, pairedItem: { item: itemIndex } });
+					continue;
+				}
+
 				// Return the publish response
-				returnItems.push({ json: publishResponse, pairedItem: { item: itemIndex } });
+				returnItems.push({ json: publishResponse as IDataObject, pairedItem: { item: itemIndex } });
 			} catch (error) {
 				if (!this.continueOnFail()) {
 					throw new NodeApiError(this.getNode(), error as JsonObject);
