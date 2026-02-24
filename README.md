@@ -1,4 +1,4 @@
-![Banner image](assets/banner.png)
+![Banner image](assets/banner_instagram_node.jpeg)
 
 # @mookielianhd/n8n-nodes-instagram
 
