@@ -187,9 +187,15 @@ Steps:
 
 | Version | Notes |
 | --- | --- |
-| 2.5.1 | Adds Carousel publishing (up to 10 images/videos with per-item error reporting and progress logs), Trial Reels support (`trial_params`), the `Page` resource with **Get Instagram Account** (Page → `instagram_business_account`), streaming-style progress messages for long-running carousel publishes, and multiple small robustness fixes around `/me` and authentication. |
+| 2.6.2 | Documentation-only release. Adds or updates `CONTRIBUTING.md` contributor guidance and refreshes this README to reflect recent changes; does not modify runtime behavior or node functionality. |
+| 2.6.1 | Patch release that keeps all execution-time, polling and error-reporting improvements from 2.6.0 and updates docs/readme to reflect the current behavior and supported resources. |
+| 2.6.0 | Shortens polling intervals across resources, adds general execution time optimizations, introduces URL validation before making Graph API calls, and adds more detailed error messages to make debugging easier. |
+| 2.5.4 | Further shortens the container health polling interval in the **Reels** resource to reduce average execution time when publishing videos. |
+| 2.5.3 | Adds `CODE_OF_CONDUCT.md` and `LICENSE`. This is a documentation/compliance update and does not change runtime behavior. |
+| 2.5.2 | Bumps the required `n8n-workflow` peer dependency to `>=2.6.1` to address security advisories (arbitrary file upload, RCE, prototype pollution, etc.) and updates the README to describe the latest features. |
+| 2.5.1 | Introduces the `Page` resource to retrieve the connected Instagram Business/Creator account for a Facebook Page and adds the **Trial Reel – Graduation Strategy** option for Reels (via `trial_params`), alongside the first stable release of Carousel publishing, extended tagging options, and streaming-style progress messages. |
 | 2.4.0 | Adds `IG Hashtag` (search, recent media, top media), `Messaging` (send DMs), and `Auth` helpers for token exchange/refresh and `/me`. |
 | 2.3.0 | Adds `Comments` resource with comment moderation (list/hide/unhide/delete, enable/disable comments) and **Private Replies** support, and an `IG User` resource for reading profile data and listing media. |
-| 2.2.0 | Improved publishing UX, adds alt text, location ID, user tags, and product tags support for media publishing. |
+| 2.2.0 | Improves publishing UX and adds alt text, location ID, user tags, and product tags support for media publishing. |
 | 2.1.0 | Stable release of Instagram publishing (Image/Reels/Stories) using the container → publish flow with robust polling and error handling. |
 | 0.1.0 | Initial release with Image, Reels and Stories publishing & built-in container polling. |
