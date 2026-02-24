@@ -20,11 +20,11 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install dependencies
-        run: 'npm ci --legacy-peer-deps'
-      
-      - name: Run lint
-        run: 'npm install --no-save --legacy-peer-deps n8n-workflow@">=2.6.1" && npm run lint'
-
+      - name: Install dependencies and lint
+        run: |
+          npm ci --legacy-peer-deps
+          npm install --legacy-peer-deps n8n-workflow@">=2.6.1"
+          npm run lint
+    
       - name: Run build
         run: 'npm install --no-save --legacy-peer-deps n8n-workflow@">=2.6.1" && npm run build'
