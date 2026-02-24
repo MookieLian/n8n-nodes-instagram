@@ -1,3 +1,5 @@
+![Banner image](assets/banner.png)
+
 # @mookielianhd/n8n-nodes-instagram
 
 This package adds an Instagram node to n8n so you can publish media to your Instagram Business accounts, moderate comments, and send private replies — all from within your workflows.
