@@ -23,6 +23,9 @@ jobs:
       - name: Install dependencies
         run: 'npm ci --legacy-peer-deps'
 
+      - name: Install 'n8n-workflow'
+        run: 'npm install --no-save n8n-workflow@">=2.6.1"'
+
       - name: Run lint
         run: 'npm run lint'
 
