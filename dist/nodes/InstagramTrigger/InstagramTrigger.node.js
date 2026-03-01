@@ -40,7 +40,7 @@ class InstagramTrigger {
             name: 'instagramTrigger',
             icon: { light: 'file:../Instagram/instagram.svg', dark: 'file:../Instagram/instagram.dark.svg' },
             group: ['trigger'],
-            version: 1,
+            version: 2,
             description: 'Listen for Instagram webhook events from Meta (comments, messages, mentions, story insights, etc.)',
             defaults: {
                 name: 'Instagram Trigger',
@@ -51,6 +51,7 @@ class InstagramTrigger {
                 {
                     name: 'instagramWebhook',
                     required: true,
+                    displayOptions: { show: { skipSignatureVerification: [false] } },
                 },
             ],
             webhooks: [
@@ -89,6 +90,13 @@ class InstagramTrigger {
                     default: [],
                     description: 'If empty, all received events are output. Otherwise only selected event types are passed to the workflow.',
                 },
+                {
+                    displayName: 'Skip Signature Verification',
+                    name: 'skipSignatureVerification',
+                    type: 'boolean',
+                    default: true,
+                    description: 'Enabled by default because n8n may not provide raw body for X-Hub-Signature-256 verification. Disable only if you have confirmed signature verification works in your setup.',
+                },
             ],
         };
     }
@@ -112,26 +120,29 @@ class InstagramTrigger {
                 noWebhookResponse: false,
             };
         }
+        const bodyData = this.getBodyData();
         const headers = this.getHeaderData();
         const signature = ((_d = headers['x-hub-signature-256']) !== null && _d !== void 0 ? _d : headers['X-Hub-Signature-256']);
-        const credentials = await this.getCredentials('instagramWebhook');
-        const appSecret = credentials === null || credentials === void 0 ? void 0 : credentials.appSecret;
-        if (!appSecret || !signature || typeof signature !== 'string') {
-            return {
-                webhookResponse: { error: 'Missing signature or app secret' },
-                noWebhookResponse: false,
-            };
-        }
-        const rawBody = req.rawBody;
-        const bodyData = this.getBodyData();
-        const rawPayload = rawBody && Buffer.isBuffer(rawBody)
-            ? rawBody
-            : Buffer.from(typeof bodyData === 'object' ? JSON.stringify(bodyData) : String(bodyData !== null && bodyData !== void 0 ? bodyData : ''), 'utf8');
-        if (!verifySignature(rawPayload, signature, appSecret)) {
-            return {
-                webhookResponse: { error: 'Invalid signature' },
-                noWebhookResponse: false,
-            };
+        const skipVerification = this.getNodeParameter('skipSignatureVerification');
+        if (!skipVerification) {
+            const credentials = await this.getCredentials('instagramWebhook');
+            const appSecret = credentials === null || credentials === void 0 ? void 0 : credentials.appSecret;
+            if (!appSecret || !signature || typeof signature !== 'string') {
+                return {
+                    webhookResponse: { error: 'Missing signature or app secret' },
+                    noWebhookResponse: false,
+                };
+            }
+            const rawBody = req.rawBody;
+            const rawPayload = rawBody && Buffer.isBuffer(rawBody)
+                ? rawBody
+                : Buffer.from(typeof bodyData === 'object' ? JSON.stringify(bodyData) : String(bodyData !== null && bodyData !== void 0 ? bodyData : ''), 'utf8');
+            if (!verifySignature(rawPayload, signature, appSecret)) {
+                return {
+                    webhookResponse: { error: 'Invalid signature' },
+                    noWebhookResponse: false,
+                };
+            }
         }
         const payload = typeof bodyData === 'object' && bodyData !== null ? bodyData : {};
         const objectType = payload.object;
@@ -160,6 +171,25 @@ class InstagramTrigger {
                         id,
                         time,
                         ...change,
+                    },
+                });
+            }
+            const messagingRaw = entryObj.messaging;
+            const messaging = Array.isArray(messagingRaw) ? messagingRaw : [];
+            for (const msg of messaging) {
+                if (filterByEvents && !eventsToInclude.includes('messages'))
+                    continue;
+                items.push({
+                    json: {
+                        object: objectType,
+                        field: 'messages',
+                        id,
+                        time,
+                        sender: msg.sender,
+                        recipient: msg.recipient,
+                        timestamp: msg.timestamp,
+                        message: msg.message,
+                        ...msg,
                     },
                 });
             }

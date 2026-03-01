@@ -54,7 +54,7 @@ export class InstagramTrigger implements INodeType {
 		name: 'instagramTrigger',
 		icon: { light: 'file:../Instagram/instagram.svg', dark: 'file:../Instagram/instagram.dark.svg' },
 		group: ['trigger'],
-		version: 1,
+		version: 2,
 		description: 'Listen for Instagram webhook events from Meta (comments, messages, mentions, story insights, etc.)',
 		defaults: {
 			name: 'Instagram Trigger',
@@ -65,6 +65,7 @@ export class InstagramTrigger implements INodeType {
 			{
 				name: 'instagramWebhook',
 				required: true,
+				displayOptions: { show: { skipSignatureVerification: [false] } },
 			},
 		],
 		webhooks: [
@@ -105,6 +106,14 @@ export class InstagramTrigger implements INodeType {
 				description:
 					'If empty, all received events are output. Otherwise only selected event types are passed to the workflow.',
 			},
+			{
+				displayName: 'Skip Signature Verification',
+				name: 'skipSignatureVerification',
+				type: 'boolean',
+				default: true,
+				description:
+					'Enabled by default because n8n may not provide raw body for X-Hub-Signature-256 verification. Disable only if you have confirmed signature verification works in your setup.',
+			},
 		],
 	};
 
@@ -131,30 +140,34 @@ export class InstagramTrigger implements INodeType {
 		}
 
 		// POST: event notification
+		const bodyData = this.getBodyData();
 		const headers = this.getHeaderData() as IDataObject;
 		const signature = (headers['x-hub-signature-256'] ?? headers['X-Hub-Signature-256']) as string | undefined;
-		const credentials = await this.getCredentials('instagramWebhook');
-		const appSecret = credentials?.appSecret as string | undefined;
+		const skipVerification = this.getNodeParameter('skipSignatureVerification') as boolean;
 
-		if (!appSecret || !signature || typeof signature !== 'string') {
-			return {
-				webhookResponse: { error: 'Missing signature or app secret' },
-				noWebhookResponse: false,
-			};
-		}
+		if (!skipVerification) {
+			const credentials = await this.getCredentials('instagramWebhook');
+			const appSecret = credentials?.appSecret as string | undefined;
 
-		const rawBody = (req as IDataObject & { rawBody?: Uint8Array }).rawBody;
-		const bodyData = this.getBodyData();
-		const rawPayload: string | Uint8Array =
-			rawBody && Buffer.isBuffer(rawBody)
-				? rawBody
-				: Buffer.from(typeof bodyData === 'object' ? JSON.stringify(bodyData) : String(bodyData ?? ''), 'utf8');
+			if (!appSecret || !signature || typeof signature !== 'string') {
+				return {
+					webhookResponse: { error: 'Missing signature or app secret' },
+					noWebhookResponse: false,
+				};
+			}
 
-		if (!verifySignature(rawPayload, signature, appSecret)) {
-			return {
-				webhookResponse: { error: 'Invalid signature' },
-				noWebhookResponse: false,
-			};
+			const rawBody = (req as IDataObject & { rawBody?: Uint8Array }).rawBody;
+			const rawPayload: string | Uint8Array =
+				rawBody && Buffer.isBuffer(rawBody)
+					? rawBody
+					: Buffer.from(typeof bodyData === 'object' ? JSON.stringify(bodyData) : String(bodyData ?? ''), 'utf8');
+
+			if (!verifySignature(rawPayload, signature, appSecret)) {
+				return {
+					webhookResponse: { error: 'Invalid signature' },
+					noWebhookResponse: false,
+				};
+			}
 		}
 
 		const payload = typeof bodyData === 'object' && bodyData !== null ? bodyData : {};
@@ -173,6 +186,8 @@ export class InstagramTrigger implements INodeType {
 			const entryObj = entry as IDataObject;
 			const id = entryObj.id;
 			const time = entryObj.time;
+
+			// Format 1: Graph API webhooks – entry[].changes[] (comments, mentions, story_insights, etc.)
 			const changesRaw = entryObj.changes;
 			const changes: IDataObject[] = Array.isArray(changesRaw) ? (changesRaw as IDataObject[]) : [];
 			for (const change of changes) {
@@ -186,6 +201,26 @@ export class InstagramTrigger implements INodeType {
 						id,
 						time,
 						...(change as IDataObject),
+					} as IDataObject,
+				});
+			}
+
+			// Format 2: Messaging webhooks – entry[].messaging[] (direct messages)
+			const messagingRaw = entryObj.messaging;
+			const messaging: IDataObject[] = Array.isArray(messagingRaw) ? (messagingRaw as IDataObject[]) : [];
+			for (const msg of messaging) {
+				if (filterByEvents && !eventsToInclude.includes('messages')) continue;
+				items.push({
+					json: {
+						object: objectType,
+						field: 'messages',
+						id,
+						time,
+						sender: (msg as IDataObject).sender,
+						recipient: (msg as IDataObject).recipient,
+						timestamp: (msg as IDataObject).timestamp,
+						message: (msg as IDataObject).message,
+						...(msg as IDataObject),
 					} as IDataObject,
 				});
 			}
