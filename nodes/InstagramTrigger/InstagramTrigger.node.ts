@@ -55,7 +55,7 @@ export class InstagramTrigger implements INodeType {
 		icon: { light: 'file:../Instagram/instagram.svg', dark: 'file:../Instagram/instagram.dark.svg' },
 		group: ['trigger'],
 		version: 2,
-		description: 'Listen for Instagram webhook events from Meta (comments, messages, mentions, story insights, etc.)',
+		description: 'Handles Meta webhook verification (GET) and receives Instagram events (POST) — comments, messages, mentions, story insights, etc.',
 		defaults: {
 			name: 'Instagram Trigger',
 		},
