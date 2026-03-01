@@ -1,0 +1,2 @@
+export declare const CredentialTestRequiredRule: import("@typescript-eslint/utils/ts-eslint").RuleModule<"addTemplate" | "missingCredentialTest", [], unknown, import("@typescript-eslint/utils/ts-eslint").RuleListener>;
+//# sourceMappingURL=credential-test-required.d.ts.map

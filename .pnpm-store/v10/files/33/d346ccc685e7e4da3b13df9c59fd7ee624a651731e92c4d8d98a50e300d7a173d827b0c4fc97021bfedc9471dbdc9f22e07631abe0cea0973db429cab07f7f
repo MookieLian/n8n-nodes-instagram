@@ -1,0 +1,2 @@
+export declare const NoCredentialReuseRule: import("@typescript-eslint/utils/ts-eslint").RuleModule<"didYouMean" | "useAvailable" | "credentialNotInPackage", [], unknown, import("@typescript-eslint/utils/ts-eslint").RuleListener>;
+//# sourceMappingURL=no-credential-reuse.d.ts.map

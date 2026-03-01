@@ -1,0 +1,1 @@
+{"version":3,"file":"global-state.js","sourceRoot":"","sources":["../../src/global-state.ts"],"names":[],"mappings":";;;;;;;;;;;IAQA,wCAEC;IAED,wCAEC;IAdD,mCAAmC;IAMnC,IAAI,WAAW,GAAgB,EAAE,eAAe,EAAE,kBAAkB,EAAE,CAAC;IAEvE,SAAgB,cAAc,CAAC,KAAkB;QAChD,WAAW,GAAG,KAAK,CAAC;IACrB,CAAC;IAED,SAAgB,cAAc;QAC7B,OAAO,IAAA,gBAAQ,EAAC,WAAW,CAAC,CAAC;IAC9B,CAAC"}

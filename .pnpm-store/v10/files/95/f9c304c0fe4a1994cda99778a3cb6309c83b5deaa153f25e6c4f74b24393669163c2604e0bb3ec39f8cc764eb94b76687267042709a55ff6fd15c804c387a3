@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "release-it#release-it",
+  "title": "JSON schema for release-it configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "The JSON schema version used to validate this configuration file"
+    },
+    "extends": {
+      "type": "string",
+      "description": "URL that specifies a configuration to extend"
+    },
+    "hooks": {
+      "type": "object",
+      "additionalProperties": true,
+      "patternProperties": {
+        "^(before|after):((version|git|npm|github|gitlab):)?(init|bump|release)$": {
+          "if": {
+            "type": "array"
+          },
+          "then": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "else": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "plugins": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "git": {
+      "$comment": "Boolean or git config object",
+      "if": {
+        "type": "object"
+      },
+      "then": {
+        "$ref": "./git.json"
+      },
+      "else": {
+        "type": "boolean",
+        "default": false
+      }
+    },
+    "npm": {
+      "$comment": "Boolean or npm config object",
+      "if": {
+        "type": "object"
+      },
+      "then": {
+        "$ref": "./npm.json"
+      },
+      "else": {
+        "type": "boolean",
+        "default": false
+      }
+    },
+    "github": {
+      "$comment": "Boolean or github config object",
+      "if": {
+        "type": "object"
+      },
+      "then": {
+        "$ref": "./github.json"
+      },
+      "else": {
+        "type": "boolean",
+        "default": false
+      }
+    },
+    "gitlab": {
+      "$comment": "Boolean or gitlab config object",
+      "if": {
+        "type": "object"
+      },
+      "then": {
+        "$ref": "./gitlab.json"
+      },
+      "else": {
+        "type": "boolean",
+        "default": false
+      }
+    }
+  }
+}

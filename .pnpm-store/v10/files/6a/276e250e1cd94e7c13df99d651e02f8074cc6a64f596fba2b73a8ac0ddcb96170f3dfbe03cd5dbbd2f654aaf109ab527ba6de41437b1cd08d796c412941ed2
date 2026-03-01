@@ -1,0 +1,19 @@
+{
+  "name": "eslint-plugin-local",
+  "version": "1.0.0",
+  "description": "A hack to enable project-specific ESLint plugin",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/taskworld/eslint-plugin-local.git"
+  },
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/taskworld/eslint-plugin-local/issues"
+  },
+  "homepage": "https://github.com/taskworld/eslint-plugin-local#readme"
+}

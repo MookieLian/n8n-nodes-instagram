@@ -1,0 +1,42 @@
+{
+  "name": "@nodeutils/defaults-deep",
+  "version": "1.1.0",
+  "description": "Like lodash's _.defaultsDeep, but with array preservation",
+  "main": "lib/index.js",
+  "scripts": {
+    "test": "babel src -d lib && node ./node_modules/istanbul/lib/cli.js cover ./test/test.js -x ./test/test.js",
+    "build": "babel src -d lib",
+    "coverage": "ws -p 8888 -d coverage/lcov-report/"
+  },
+  "files": [
+    "lib"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nodeutils/defaults-deep.git"
+  },
+  "keywords": [
+    "nodeutils",
+    "defaultsDeep",
+    "lodash",
+    "array",
+    "merge"
+  ],
+  "author": "Drew Llewellyn <drew@drew.pro> (http://drew.pro)",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/nodeutils/defaults-deep/issues"
+  },
+  "homepage": "https://github.com/nodeutils/defaults-deep#readme",
+  "devDependencies": {
+    "babel-cli": "^6.11.4",
+    "babel-preset-es2015": "^6.13.2",
+    "chai": "^3.5.0",
+    "istanbul": "^0.4.4",
+    "local-web-server": "^1.2.6",
+    "mocha": "^3.0.2"
+  },
+  "dependencies": {
+    "lodash": "^4.15.0"
+  }
+}

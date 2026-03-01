@@ -1,0 +1,1 @@
+{"version":3,"file":"expression-reserved-variable.error.d.ts","sourceRoot":"","sources":["../../../src/errors/expression-reserved-variable.error.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,eAAe,EAAE,MAAM,oBAAoB,CAAC;AAErD,qBAAa,+BAAgC,SAAQ,eAAe;gBACvD,YAAY,EAAE,MAAM;CAGhC"}

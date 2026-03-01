@@ -1,0 +1,29 @@
+(function (factory) {
+    if (typeof module === "object" && typeof module.exports === "object") {
+        var v = factory(require, exports);
+        if (v !== undefined) module.exports = v;
+    }
+    else if (typeof define === "function" && define.amd) {
+        define(["require", "exports"], factory);
+    }
+})(function (require, exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.getNodeByName = getNodeByName;
+    /**
+     * Returns the node with the given name if it exists else null
+     *
+     * @param {INodes} nodes Nodes to search in
+     * @param {string} name Name of the node to return
+     */
+    function getNodeByName(nodes, name) {
+        if (Array.isArray(nodes)) {
+            return nodes.find((node) => node.name === name) || null;
+        }
+        if (nodes.hasOwnProperty(name)) {
+            return nodes[name];
+        }
+        return null;
+    }
+});
+//# sourceMappingURL=get-node-by-name.js.map
