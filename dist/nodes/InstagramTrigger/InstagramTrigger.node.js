@@ -3,8 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.InstagramTrigger = void 0;
 const n8n_workflow_1 = require("n8n-workflow");
 const crypto = require('node:crypto');
-const BufferGlobal = typeof globalThis !== 'undefined' && globalThis.Buffer;
-const Buffer = BufferGlobal;
+const { Buffer } = require('node:buffer');
 const INSTAGRAM_OBJECT = 'instagram';
 const INSTAGRAM_WEBHOOK_FIELDS = [
     { name: 'Comments', value: 'comments', description: 'When someone comments on media' },
@@ -41,7 +40,7 @@ class InstagramTrigger {
             icon: { light: 'file:../Instagram/instagram.svg', dark: 'file:../Instagram/instagram.dark.svg' },
             group: ['trigger'],
             version: 2,
-            description: 'Handles Meta webhook verification (GET) and receives Instagram events (POST) — comments, messages, mentions, story insights, etc.',
+            description: "Instagram trigger for n8n that lets you react to real-time events (comments, messages, mentions, story insights, etc.) from Instagram Business and Creator accounts via the Facebook/Instagram Graph API, so you can connect incoming activity to the same automated workflows that manage publishing, moderation, messaging and analytics.",
             defaults: {
                 name: 'Instagram Trigger',
             },

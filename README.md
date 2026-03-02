@@ -2,9 +2,9 @@
 
 # @mookielianhd/n8n-nodes-instagram
 
-This package adds an Instagram node to n8n so you can publish media to your Instagram Business accounts, moderate comments, and send private replies — all from within your workflows.
+This package’s Instagram nodes for n8n let you publish and manage content, moderate comments, send DMs, and react to real-time events (comments, messages, mentions, story insights, etc.) on Instagram Business and Creator accounts via the Facebook/Instagram Graph API.
 
-Instagram features are powered by the Facebook/Instagram Graph API and allow programmatic upload of images, reels and stories, plus comment moderation and private replies, for any Instagram Business or Creator account.
+All functionality is built on the Facebook/Instagram Graph API, including media publishing (images, Reels, Stories, carousels), comment moderation, private replies, messaging, hashtag search, IG User/Page helpers, and webhook-based triggers for Business and Creator accounts.
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/sustainable-use-license/) workflow automation platform.
 
@@ -60,7 +60,9 @@ For the **Instagram Trigger** node you need a separate **Instagram Webhook** cre
 
 ## Instagram Webhook Trigger
 
-The **Instagram Trigger** node listens for real-time webhook events from Meta (comments, direct messages, mentions, story insights, etc.) and starts a workflow when an event is received.
+This package’s Instagram nodes for n8n let you publish and manage content, moderate comments, send DMs, and react to real-time events (comments, messages, mentions, story insights, etc.) on Instagram Business and Creator accounts via the Facebook/Instagram Graph API.
+
+The **Instagram Trigger** node listens for real-time webhook events from Meta and starts a workflow when an event is received.
 
 ### Setup
 
@@ -221,6 +223,9 @@ Each event is output as an item with `object`, `field`, `value`, `id`, `time` an
 
 | Version | Notes |
 | --- | --- |
+| 3.1.1 | Fixes overlapping description text in the node UI; documentation/layout-only cleanup with no runtime behavior changes. |
+| 3.1.0 | Sets `skipSignatureVerification` to `true` by default for the Instagram Trigger node and ensures webhook executions are correctly registered. |
+| 3.0.0 | Introduces the Instagram Trigger node for webhook-based events (comments, messages, mentions, story insights) and updates underlying dependencies. |
 | 2.6.2 | Documentation-only release. Adds or updates `CONTRIBUTING.md` contributor guidance and refreshes this README to reflect recent changes; does not modify runtime behavior or node functionality. |
 | 2.6.1 | Patch release that keeps all execution-time, polling and error-reporting improvements from 2.6.0 and updates docs/readme to reflect the current behavior and supported resources. |
 | 2.6.0 | Shortens polling intervals across resources, adds general execution time optimizations, introduces URL validation before making Graph API calls, and adds more detailed error messages to make debugging easier. |
