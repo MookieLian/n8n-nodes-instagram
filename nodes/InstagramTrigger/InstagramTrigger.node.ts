@@ -8,18 +8,6 @@ import type {
 import type { IWebhookFunctions } from 'n8n-workflow';
 import { NodeConnectionTypes } from 'n8n-workflow';
 
-// Use Node built-ins without pulling in @types/node (n8n runs in Node)
-const crypto = require('node:crypto') as {
-	createHmac: (algo: string, secret: string) => { update: (data: string | Uint8Array) => { digest: (enc: string) => string } };
-	timingSafeEqual: (a: Uint8Array, b: Uint8Array) => boolean;
-};
-const { Buffer } = require('node:buffer') as {
-	Buffer: {
-		from(s: string, enc?: string): Uint8Array;
-		isBuffer(v: unknown): v is Uint8Array;
-	};
-};
-
 const INSTAGRAM_OBJECT = 'instagram';
 
 const INSTAGRAM_WEBHOOK_FIELDS = [
@@ -36,18 +24,6 @@ const INSTAGRAM_WEBHOOK_FIELDS = [
 	{ name: 'Standby', value: 'standby', description: 'Standby events' },
 	{ name: 'Story Insights', value: 'story_insights', description: 'Metrics when a story expires' },
 ] as const;
-
-function verifySignature(rawBody: string | Uint8Array, signature: string, secret: string): boolean {
-	const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
-	if (signature.length !== expected.length) return false;
-	try {
-		const sigBuf = Buffer.from(signature, 'utf8');
-		const expBuf = Buffer.from(expected, 'utf8');
-		return crypto.timingSafeEqual(sigBuf as Uint8Array, expBuf as Uint8Array);
-	} catch {
-		return false;
-	}
-}
 
 export class InstagramTrigger implements INodeType {
 	description: INodeTypeDescription = {
@@ -143,33 +119,16 @@ export class InstagramTrigger implements INodeType {
 
 		// POST: event notification
 		const bodyData = this.getBodyData();
-		const headers = this.getHeaderData() as IDataObject;
-		const signature = (headers['x-hub-signature-256'] ?? headers['X-Hub-Signature-256']) as string | undefined;
 		const skipVerification = this.getNodeParameter('skipSignatureVerification') as boolean;
 
 		if (!skipVerification) {
-			const credentials = await this.getCredentials('instagramWebhook');
-			const appSecret = credentials?.appSecret as string | undefined;
-
-			if (!appSecret || !signature || typeof signature !== 'string') {
-				return {
-					webhookResponse: { error: 'Missing signature or app secret' },
-					noWebhookResponse: false,
-				};
-			}
-
-			const rawBody = (req as IDataObject & { rawBody?: Uint8Array }).rawBody;
-			const rawPayload: string | Uint8Array =
-				rawBody && Buffer.isBuffer(rawBody)
-					? rawBody
-					: Buffer.from(typeof bodyData === 'object' ? JSON.stringify(bodyData) : String(bodyData ?? ''), 'utf8');
-
-			if (!verifySignature(rawPayload, signature, appSecret)) {
-				return {
-					webhookResponse: { error: 'Invalid signature' },
-					noWebhookResponse: false,
-				};
-			}
+			return {
+				webhookResponse: {
+					error:
+						'X-Hub-Signature-256 verification is not supported in this environment. Set "Skip Signature Verification" to true to accept events without validating the signature.',
+				},
+				noWebhookResponse: false,
+			};
 		}
 
 		const payload = typeof bodyData === 'object' && bodyData !== null ? bodyData : {};
