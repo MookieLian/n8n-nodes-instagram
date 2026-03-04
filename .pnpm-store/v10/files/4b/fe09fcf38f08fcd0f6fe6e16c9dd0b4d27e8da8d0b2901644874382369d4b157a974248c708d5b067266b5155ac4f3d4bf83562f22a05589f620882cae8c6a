@@ -1,0 +1,2 @@
+export declare const NoDeprecatedWorkflowFunctionsRule: import("@typescript-eslint/utils/ts-eslint").RuleModule<"deprecatedRequestFunction" | "deprecatedFunction" | "deprecatedType" | "deprecatedWithoutReplacement" | "suggestReplaceFunction" | "suggestReplaceType", [], unknown, import("@typescript-eslint/utils/ts-eslint").RuleListener>;
+//# sourceMappingURL=no-deprecated-workflow-functions.d.ts.map

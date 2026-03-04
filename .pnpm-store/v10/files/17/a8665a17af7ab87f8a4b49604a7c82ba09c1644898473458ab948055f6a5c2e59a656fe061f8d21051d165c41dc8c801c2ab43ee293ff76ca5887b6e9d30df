@@ -1,0 +1,1 @@
+{"version":3,"file":"expression-reserved-variable.error.js","sourceRoot":"","sources":["../../../src/errors/expression-reserved-variable.error.ts"],"names":[],"mappings":";;;;;;;;;;;;IAAA,yDAAqD;IAErD,MAAa,+BAAgC,SAAQ,kCAAe;QACnE,YAAY,YAAoB;YAC/B,KAAK,CAAC,eAAe,YAAY,4BAA4B,CAAC,CAAC;QAChE,CAAC;KACD;IAJD,0EAIC"}

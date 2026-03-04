@@ -1,0 +1,2 @@
+export declare const CredentialPasswordFieldRule: import("@typescript-eslint/utils/ts-eslint").RuleModule<"missingPasswordOption", [], unknown, import("@typescript-eslint/utils/ts-eslint").RuleListener>;
+//# sourceMappingURL=credential-password-field.d.ts.map

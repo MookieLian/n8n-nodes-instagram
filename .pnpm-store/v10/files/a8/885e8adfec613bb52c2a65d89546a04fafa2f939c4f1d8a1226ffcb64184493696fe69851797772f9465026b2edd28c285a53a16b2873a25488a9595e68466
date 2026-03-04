@@ -1,0 +1,4 @@
+
+> @n8n/eslint-plugin-community-nodes@0.6.0 build /home/runner/work/n8n/n8n/packages/@n8n/eslint-plugin-community-nodes
+> tsc --project tsconfig.build.json
+

@@ -1,0 +1,1 @@
+{"version":3,"file":"unexpected.error.js","sourceRoot":"","sources":["../../../../src/errors/base/unexpected.error.ts"],"names":[],"mappings":";;;;;;;;;;;;IACA,6CAAyC;IAMzC;;;;;;OAMG;IACH,MAAa,eAAgB,SAAQ,sBAAS;QAC7C,YAAY,OAAe,EAAE,OAA+B,EAAE;YAC7D,IAAI,CAAC,KAAK,GAAG,IAAI,CAAC,KAAK,IAAI,OAAO,CAAC;YAEnC,KAAK,CAAC,OAAO,EAAE,IAAI,CAAC,CAAC;QACtB,CAAC;KACD;IAND,0CAMC"}

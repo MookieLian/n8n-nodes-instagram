@@ -1,18 +1,10 @@
 {
-    "node": "@mookielianhd/n8n-nodes-instagram",
+    "node": "@mookielianhd/n8n-nodes-instagram.instagram",
     "nodeVersion": "1.0",
     "codexVersion": "1.0",
     "categories": ["Development", "Developer Tools"],
     "resources": {
-        "credentialDocumentation": [
-            {
-                "url": "https://docs.n8n.io/integrations/builtin/credentials/facebookgraph/"
-            }
-        ],
-        "primaryDocumentation": [
-            {
-                "url": "https://developers.facebook.com/docs/instagram-api/guides/content-publishing"
-            }
-        ]
+        "credentialDocumentation": [{ "url": "https://docs.n8n.io/integrations/builtin/credentials/facebookgraph/" }],
+        "primaryDocumentation": [{ "url": "https://developers.facebook.com/docs/instagram-api/guides/content-publishing" }]
     }
 }

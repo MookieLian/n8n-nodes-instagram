@@ -1,0 +1,36 @@
+(function (factory) {
+    if (typeof module === "object" && typeof module.exports === "object") {
+        var v = factory(require, exports);
+        if (v !== undefined) module.exports = v;
+    }
+    else if (typeof define === "function" && define.amd) {
+        define(["require", "exports"], factory);
+    }
+})(function (require, exports) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    exports.renameFormFields = renameFormFields;
+    function renameFormFields(node, renameField) {
+        const formFields = node.parameters?.formFields;
+        const values = formFields &&
+            typeof formFields === 'object' &&
+            'values' in formFields &&
+            typeof formFields.values === 'object' &&
+            // TypeScript thinks this is `Array.values` and gets very confused here
+            // eslint-disable-next-line @typescript-eslint/unbound-method
+            Array.isArray(formFields.values)
+            ? // eslint-disable-next-line @typescript-eslint/unbound-method
+                (formFields.values ?? [])
+            : [];
+        for (const formFieldValue of values) {
+            if (!formFieldValue || typeof formFieldValue !== 'object')
+                continue;
+            if ('fieldType' in formFieldValue && formFieldValue.fieldType === 'html') {
+                if ('html' in formFieldValue) {
+                    formFieldValue.html = renameField(formFieldValue.html);
+                }
+            }
+        }
+    }
+});
+//# sourceMappingURL=rename-node-utils.js.map

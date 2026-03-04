@@ -1,0 +1,2 @@
+export declare const IconValidationRule: import("@typescript-eslint/utils/ts-eslint").RuleModule<"iconFileNotFound" | "iconNotSvg" | "lightDarkSame" | "invalidIconPath" | "missingIcon" | "addPlaceholder" | "addFileProtocol" | "changeExtension" | "similarIcon", [], unknown, import("@typescript-eslint/utils/ts-eslint").RuleListener>;
+//# sourceMappingURL=icon-validation.d.ts.map

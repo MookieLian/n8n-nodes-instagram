@@ -1,0 +1,1 @@
+{"version":3,"file":"operational.error.js","sourceRoot":"","sources":["../../../../src/errors/base/operational.error.ts"],"names":[],"mappings":";;;;;;;;;;;;IACA,6CAAyC;IAMzC;;;;;;OAMG;IACH,MAAa,gBAAiB,SAAQ,sBAAS;QAC9C,YAAY,OAAe,EAAE,OAAgC,EAAE;YAC9D,IAAI,CAAC,KAAK,GAAG,IAAI,CAAC,KAAK,IAAI,SAAS,CAAC;YAErC,KAAK,CAAC,OAAO,EAAE,IAAI,CAAC,CAAC;QACtB,CAAC;KACD;IAND,4CAMC"}

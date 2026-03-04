@@ -1,0 +1,110 @@
+{
+  "name": "@phun-ky/typeof",
+  "version": "2.0.3",
+  "description": "A set of JavaScript helper functions to check for types",
+  "keywords": [
+    "types",
+    "string",
+    "number",
+    "object",
+    "javascript",
+    "typeof",
+    "isString",
+    "isNotString",
+    "isNumber",
+    "isNotNumber",
+    "isBoolean",
+    "isNotBoolean",
+    "isUndefined",
+    "isNotUndefined",
+    "isDefined",
+    "isObjectStrict",
+    "isObjectLoose",
+    "isClass",
+    "isBuiltInConstructor",
+    "isBuiltInCallable",
+    "isInstanceOfUnknownClass"
+  ],
+  "homepage": "https://phun-ky.net/projects/typeof",
+  "bugs": {
+    "url": "https://github.com/phun-ky/typeof/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phun-ky/typeof.git"
+  },
+  "funding": "https://github.com/phun-ky/typeof?sponsor=1",
+  "license": "MIT",
+  "author": "Alexander Vassbotn Røyne-Helgesen <alexander@phun-ky.net>",
+  "type": "module",
+  "main": "dist/typeof.js",
+  "types": "dist/typeof.d.ts",
+  "files": [
+    "/dist/typeof.js",
+    "/dist/typeof.js.map",
+    "/dist/typeof.d.ts"
+  ],
+  "scripts": {
+    "build": "npm run clean && npm run rollup",
+    "clean": "rm -rf dist dts",
+    "commit": "npx git-cz",
+    "docs:gen": "node ./node_modules/.bin/typedoc",
+    "release": "release-it",
+    "rollup": "rollup -c",
+    "prerollup:dev": "npm run clean",
+    "rollup:dev": "rollup -c -w",
+    "style:code": "npx putout src",
+    "style:format": "./node_modules/.bin/eslint -c ./eslint.config.mjs src/**/*.ts  --fix --no-warn-ignored && ./node_modules/.bin/prettier --write ./eslint.config.mjs src",
+    "style:lint": "./node_modules/.bin/eslint -c ./eslint.config.mjs src/**/*.ts --no-warn-ignored && ./node_modules/.bin/prettier --check src",
+    "test": "glob -c \"node --import tsx --import global-jsdom/register --test --no-warnings\" \"./src/**/__tests__/**/*.[jt]s\"",
+    "pretest:ci": "rm -rf coverage && mkdir -p coverage",
+    "test:ci": "glob -c \"node --import tsx --import global-jsdom/register --test --no-warnings --experimental-test-coverage --test-reporter=cobertura --test-reporter-destination=coverage/cobertura-coverage.xml --test-reporter=spec --test-reporter-destination=stdout\" \"./src/**/__tests__/**/*.[jt]s\""
+  },
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/git-cz"
+    }
+  },
+  "devDependencies": {
+    "@release-it/conventional-changelog": "^10.0.0",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@rollup/plugin-terser": "^0.4.4",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/jest-dom": "^6.4.2",
+    "@types/node": "^24.3.0",
+    "cobertura": "^1.0.1",
+    "eslint": "^9.20.0",
+    "eslint-config-phun-ky": "^1.0.0",
+    "git-cz": "^4.9.0",
+    "glob": "^11.0.1",
+    "global-jsdom": "^26.0.0",
+    "jsdom": "^26.0.0",
+    "prettier": "^3.5.1",
+    "putout": "^40.0.16",
+    "quibble": "^0.9.1",
+    "release-it": "^19.0.1",
+    "remark-github": "^12.0.0",
+    "remark-toc": "^9.0.0",
+    "rollup": "^4.12.0",
+    "rollup-plugin-dts": "^6.1.0",
+    "rollup-plugin-typescript2": "^0.36.0",
+    "tslib": "^2.3.1",
+    "tsx": "^4.7.1",
+    "typedoc": "^0.28.2",
+    "typedoc-plugin-frontmatter": "^1.0.0",
+    "typedoc-plugin-markdown": "^4.2.3",
+    "typedoc-plugin-mdn-links": "^5.0.1",
+    "typedoc-plugin-no-inherit": "^1.4.0",
+    "typedoc-plugin-remark": "^2.0.0",
+    "typedoc-plugin-rename-defaults": "^0.7.1",
+    "typescript": "^5.0.0",
+    "unified-prettier": "^2.0.1"
+  },
+  "engines": {
+    "node": "^20.9.0 || >=22.0.0",
+    "npm": ">=10.8.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

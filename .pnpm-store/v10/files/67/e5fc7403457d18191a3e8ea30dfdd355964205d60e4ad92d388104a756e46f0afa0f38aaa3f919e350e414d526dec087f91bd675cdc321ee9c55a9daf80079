@@ -1,0 +1,2 @@
+export declare const NoRestrictedImportsRule: import("@typescript-eslint/utils/ts-eslint").RuleModule<"restrictedImport" | "restrictedRequire" | "restrictedDynamicImport", [], unknown, import("@typescript-eslint/utils/ts-eslint").RuleListener>;
+//# sourceMappingURL=no-restricted-imports.d.ts.map

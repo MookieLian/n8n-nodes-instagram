@@ -1,0 +1,13 @@
+{
+    "node": "@mookielianhd/n8n-nodes-instagram.instagramTrigger",
+    "nodeVersion": "1.0",
+    "codexVersion": "1.0",
+    "categories": ["Development", "Developer Tools", "Trigger"],
+    "resources": {
+        "credentialDocumentation": [{ "url": "https://github.com/MookieLian/n8n-nodes-instagram#instagram-webhook-trigger" }],
+        "primaryDocumentation": [
+            { "url": "https://developers.facebook.com/docs/graph-api/webhooks/getting-started" },
+            { "url": "https://developers.facebook.com/docs/graph-api/webhooks/reference/instagram" }
+        ]
+    }
+}

@@ -2,9 +2,9 @@
 
 # @mookielianhd/n8n-nodes-instagram
 
-This package adds an Instagram node to n8n so you can publish media to your Instagram Business accounts, moderate comments, and send private replies — all from within your workflows.
+This package’s Instagram nodes for n8n let you publish and manage content, moderate comments, send DMs, and react to real-time events (comments, messages, mentions, story insights, etc.) on Instagram Business and Creator accounts via the Facebook/Instagram Graph API.
 
-Instagram features are powered by the Facebook/Instagram Graph API and allow programmatic upload of images, reels and stories, plus comment moderation and private replies, for any Instagram Business or Creator account.
+All functionality is built on the Facebook/Instagram Graph API, including media publishing (images, Reels, Stories, carousels), comment moderation, private replies, messaging, hashtag search, IG User/Page helpers, and webhook-based triggers for Business and Creator accounts.
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/sustainable-use-license/) workflow automation platform.
 
@@ -36,6 +36,7 @@ The node exposes several resources:
 | `Messaging` | Send direct messages (DMs) to Instagram users via the Instagram Messaging API. |
 | `Page` | Given a Facebook Page ID, fetch the connected Instagram Business/Creator account (`instagram_business_account`). |
 | `Auth` | Exchange short-lived Instagram User tokens for long-lived tokens, refresh long-lived tokens, and call the Graph API `/me` endpoint. |
+| **Instagram Trigger** | **Trigger:** receive real-time webhook events from Meta (comments, messages, mentions, story insights, etc.) and run a workflow for each event. Requires a separate **Instagram Webhook** credential (App Secret) and Meta App Dashboard webhook configuration. |
 
 ## Credentials
 
@@ -52,6 +53,37 @@ Steps:
 2. Use Meta’s Graph Explorer or your own app to generate an access token that includes the scopes listed above.  
 3. Convert it to a long-lived token and paste it into the credential’s **Access Token** field.  
 4. The built-in credential test hits `https://graph.facebook.com/v22.0/me` to confirm the token works.
+
+### Instagram Webhook Trigger credentials
+
+For the **Instagram Trigger** node you need a separate **Instagram Webhook** credential that stores your Meta **App Secret** (from App Dashboard → Settings → Basic). The App Secret is used to verify the `X-Hub-Signature-256` header on incoming webhook POSTs from Meta. The **Verify Token** is set in the node parameters (see below) and must match the value you enter in the Meta App Dashboard when configuring the webhook URL.
+
+## Instagram Webhook Trigger
+
+This package’s Instagram nodes for n8n let you publish and manage content, moderate comments, send DMs, and react to real-time events (comments, messages, mentions, story insights, etc.) on Instagram Business and Creator accounts via the Facebook/Instagram Graph API.
+
+The **Instagram Trigger** node listens for real-time webhook events from Meta and starts a workflow when an event is received.
+
+### Setup
+
+1. **Create the credential**  
+   Add an **Instagram Webhook** credential and enter your Meta **App Secret** (from your app’s Settings → Basic in the Meta App Dashboard).
+
+2. **Add the trigger to your workflow**  
+   Add the **Instagram Trigger** node. Set **Verify Token** to any string you will use in the Meta Dashboard (e.g. a random secret). Copy the **Webhook URL** shown in the node (Production or Test URL).
+
+3. **Configure Webhooks in Meta App Dashboard**  
+   - In [Meta for Developers](https://developers.facebook.com/), open your app and go to **Webhooks** (or add the Webhooks product).  
+   - For **Instagram**, set:  
+     - **Callback URL**: paste the n8n Webhook URL from the trigger node.  
+     - **Verify Token**: the same string you set in the node’s **Verify Token** parameter.  
+   - Subscribe to the Instagram fields you need (e.g. `comments`, `messages`, `mentions`, `story_insights`).  
+   - Save. Meta will send a GET request to your URL; the node responds with the challenge so verification succeeds.
+
+4. **Optional: filter events**  
+   Use **Events to Include** on the node to pass only selected event types (e.g. only `messages` and `mentions`) to the workflow. If left empty, all received events are output.
+
+Each event is output as an item with `object`, `field`, `value`, `id`, `time` and the raw change payload, so you can use the **Instagram** node (e.g. Messaging, Comments) in the same workflow to reply or moderate. To return a custom response to the caller instead of the default 200 OK, add a **Respond to Webhook** node after the trigger.
 
 ## Compatibility
 
@@ -183,12 +215,17 @@ Steps:
 * [Instagram Messaging API](https://developers.facebook.com/docs/messenger-platform/instagram/features/)  
 * [Instagram Platform Access Token](https://developers.facebook.com/docs/instagram-platform/reference/access_token/)  
 * [Instagram Platform Refresh Access Token](https://developers.facebook.com/docs/instagram-platform/reference/refresh_access_token/)  
-* [Instagram Platform /me](https://developers.facebook.com/docs/instagram-platform/reference/me/)
+* [Instagram Platform /me](https://developers.facebook.com/docs/instagram-platform/reference/me/)  
+* [Webhooks from Meta (getting started)](https://developers.facebook.com/docs/graph-api/webhooks/getting-started)  
+* [Instagram webhook reference](https://developers.facebook.com/docs/graph-api/webhooks/reference/instagram)
 
 ## Version history
 
 | Version | Notes |
 | --- | --- |
+| 3.1.1 | Fixes overlapping description text in the node UI; documentation/layout-only cleanup with no runtime behavior changes. |
+| 3.1.0 | Sets `skipSignatureVerification` to `true` by default for the Instagram Trigger node and ensures webhook executions are correctly registered. |
+| 3.0.0 | Introduces the Instagram Trigger node for webhook-based events (comments, messages, mentions, story insights) and updates underlying dependencies. |
 | 2.6.2 | Documentation-only release. Adds or updates `CONTRIBUTING.md` contributor guidance and refreshes this README to reflect recent changes; does not modify runtime behavior or node functionality. |
 | 2.6.1 | Patch release that keeps all execution-time, polling and error-reporting improvements from 2.6.0 and updates docs/readme to reflect the current behavior and supported resources. |
 | 2.6.0 | Shortens polling intervals across resources, adds general execution time optimizations, introduces URL validation before making Graph API calls, and adds more detailed error messages to make debugging easier. |
