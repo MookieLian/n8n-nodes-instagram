@@ -25,6 +25,7 @@ class InstagramTrigger {
             icon: { light: 'file:../Instagram/instagram.svg', dark: 'file:../Instagram/instagram.dark.svg' },
             group: ['trigger'],
             version: 2,
+            usableAsTool: true,
             description: "Instagram trigger for n8n that lets you react to real-time events (comments, messages, mentions, story insights, etc.) from Instagram Business and Creator accounts via the Facebook/Instagram Graph API, so you can connect incoming activity to the same automated workflows that manage publishing, moderation, messaging and analytics.",
             defaults: {
                 name: 'Instagram Trigger',
@@ -33,7 +34,7 @@ class InstagramTrigger {
             outputs: [n8n_workflow_1.NodeConnectionTypes.Main],
             credentials: [
                 {
-                    name: 'instagramWebhook',
+                    name: 'instagramWebhookApi',
                     required: true,
                     displayOptions: { show: { skipSignatureVerification: [false] } },
                 },
@@ -79,7 +80,7 @@ class InstagramTrigger {
                     name: 'skipSignatureVerification',
                     type: 'boolean',
                     default: true,
-                    description: 'Enabled by default because n8n may not provide raw body for X-Hub-Signature-256 verification. Disable only if you have confirmed signature verification works in your setup.',
+                    description: 'Whether to skip X-Hub-Signature-256 verification. Enabled by default because n8n may not provide raw body for signature verification; disable only if you have confirmed verification works in your setup.',
                 },
             ],
         };
