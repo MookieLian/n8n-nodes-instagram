@@ -22,9 +22,10 @@ jobs:
 
       - name: Install dependencies and lint
         run: |
+          npm i
           npm ci --legacy-peer-deps
           npm install --no-package-lock --no-save --legacy-peer-deps n8n-workflow@">=2.6.1"
-          npm run lint
+          npx n8n-node lint
     
       - name: Run build
         run: 'npm run build'

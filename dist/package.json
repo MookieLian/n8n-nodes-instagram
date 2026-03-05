@@ -4,18 +4,15 @@
     "description": "Instagram node for n8n",
     "license": "MIT",
     "homepage": "",
-    "keywords": [
-        "n8n-community-node-package"
-    ],
-    "author": {
-        "name": "MookieLian",
-        "email": "mookielianhd@gmail.com"
-    },
+    "keywords": ["n8n-community-node-package"],
+    "author": { "name": "MookieLian", "email": "mookielianhd@gmail.com" },
     "repository": {
         "type": "git",
         "url": "git+https://github.com/MookieLian/n8n-nodes-instagram.git"
     },
     "scripts": {
+        "build": "node scripts/run-tsc.js",
+        "build:watch": "node scripts/run-tsc.js --watch",
         "build": "node scripts/run-tsc.js",
         "build:watch": "node scripts/run-tsc.js --watch",
         "dev": "n8n-node dev",
@@ -24,17 +21,19 @@
         "release": "n8n-node release",
         "prepublishOnly": "n8n-node prerelease"
     },
-    "files": [
-        "dist"
-    ],
+    "files": ["dist"],
     "n8n": {
         "n8nNodesApiVersion": 1,
         "strict": true,
         "nodes": [
             "dist/nodes/Instagram/Instagram.node.js",
             "dist/nodes/InstagramTrigger/InstagramTrigger.node.js"
+            "dist/nodes/Instagram/Instagram.node.js",
+            "dist/nodes/InstagramTrigger/InstagramTrigger.node.js"
         ],
         "credentials": [
+            "dist/credentials/InstagramApi.credentials.js",
+            "dist/credentials/InstagramWebhookApi.credentials.js"
             "dist/credentials/InstagramApi.credentials.js",
             "dist/credentials/InstagramWebhookApi.credentials.js"
         ]
@@ -44,6 +43,7 @@
         "@n8n/node-cli": "^0.21.0",
         "@types/estree": "^1.0.8",
         "@types/json-schema": "^7.0.15",
+        "eslint": "^10.0.1",
         "eslint": "^10.0.1",
         "globals": "^17.3.0",
         "prettier": "3.6.2",
@@ -55,5 +55,6 @@
     },
     "peerDependencies": {
         "n8n-workflow": ">=2.6.1"
-    }
+    },
+    "peerDependencies": { "n8n-workflow": ">=2.6.1" }
 }
