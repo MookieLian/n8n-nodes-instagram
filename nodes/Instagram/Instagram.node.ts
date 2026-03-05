@@ -607,6 +607,81 @@ export class Instagram implements INodeType {
 				},
 			},
 			{
+				displayName: 'Carousel Input Mode',
+				name: 'carouselInputMode',
+				type: 'options',
+				options: [
+					{
+						name: 'Manual Media Items',
+						value: 'manual',
+						description: 'Manually configure each carousel media item in this node',
+					},
+					{
+						name: 'Use Field From Input',
+						value: 'fromField',
+						description:
+							'Read an array of media URLs from a field on the incoming item and build the carousel from it',
+					},
+				],
+				default: 'manual',
+				description:
+					'Whether to configure carousel media directly in this node or read them from an incoming field',
+				displayOptions: {
+					show: {
+						resource: ['carousel'],
+						operation: ['publish'],
+					},
+				},
+			},
+			{
+				displayName: 'Media Array Field Name',
+				name: 'carouselMediaArrayField',
+				type: 'string',
+				default: '',
+				description:
+					'Name of the field on the incoming item that contains an array of media URLs or objects (for example, "mediaUrls" or "data.carousel")',
+				displayOptions: {
+					show: {
+						resource: ['carousel'],
+						operation: ['publish'],
+						carouselInputMode: ['fromField'],
+					},
+				},
+			},
+			{
+				displayName: 'Media Type for Array URLs',
+				name: 'carouselMediaArrayType',
+				type: 'options',
+				default: 'auto',
+				description:
+					'How to determine whether each URL in the array is treated as an image or a video',
+				options: [
+					{
+						name: 'Auto-Detect From URL',
+						value: 'auto',
+						description:
+							'Try to infer the media type from the URL or file extension; defaults to image when uncertain',
+					},
+					{
+						name: 'Image',
+						value: 'image',
+						description: 'Treat all URLs in the array as images',
+					},
+					{
+						name: 'Video',
+						value: 'video',
+						description: 'Treat all URLs in the array as videos',
+					},
+				],
+				displayOptions: {
+					show: {
+						resource: ['carousel'],
+						operation: ['publish'],
+						carouselInputMode: ['fromField'],
+					},
+				},
+			},
+			{
 				displayName: 'Carousel Media',
 				name: 'carouselMedia',
 				type: 'fixedCollection',
@@ -622,6 +697,7 @@ export class Instagram implements INodeType {
 					show: {
 						resource: ['carousel'],
 						operation: ['publish'],
+						carouselInputMode: ['manual'],
 					},
 				},
 				options: [
@@ -1591,26 +1667,173 @@ export class Instagram implements INodeType {
 							);
 						}
 
-						try {
-							carouselMedia = this.getNodeParameter('carouselMedia', itemIndex, { mediaItem: [] }) as {
-								mediaItem?: Array<{ mediaType: string; imageUrl?: string; videoUrl?: string }>;
-							};
-							if (!carouselMedia || typeof carouselMedia !== 'object') {
+						const carouselInputMode = this.getNodeParameter(
+							'carouselInputMode',
+							itemIndex,
+							'manual',
+						) as string;
+
+						const resolveFieldPath = (source: IDataObject, path: string) => {
+							if (!path) return undefined;
+							const parts = path.split('.');
+							let current: unknown = source;
+							for (const part of parts) {
+								if (current == null || typeof current !== 'object') {
+									return undefined;
+								}
+								current = (current as IDataObject)[part];
+							}
+							return current;
+						};
+
+						if (carouselInputMode === 'fromField') {
+							const fieldName = this.getNodeParameter(
+								'carouselMediaArrayField',
+								itemIndex,
+							) as string;
+							if (!fieldName || typeof fieldName !== 'string') {
 								throw new NodeOperationError(
 									this.getNode(),
-									`Invalid carousel media parameter at item index ${itemIndex}. Carousel media must be an object.`,
+									`Invalid carousel media array field name at item index ${itemIndex}. Field name must be a non-empty string.`,
 									{ itemIndex },
 								);
 							}
-						} catch (error) {
-							if (error instanceof NodeOperationError) {
-								throw error;
+
+							const mediaTypeMode = this.getNodeParameter(
+								'carouselMediaArrayType',
+								itemIndex,
+								'auto',
+							) as string;
+
+							const itemJson = items[itemIndex]?.json as IDataObject;
+							const rawArray = resolveFieldPath(itemJson, fieldName);
+
+							if (!Array.isArray(rawArray)) {
+								throw new NodeOperationError(
+									this.getNode(),
+									`Invalid carousel media array at item index ${itemIndex}. The field "${fieldName}" must contain an array.`,
+									{ itemIndex },
+								);
 							}
-							throw new NodeOperationError(
-								this.getNode(),
-								`Failed to get carousel media parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
-								{ itemIndex },
+
+							const toMediaItem = (entry: unknown, index: number) => {
+								const label = `carousel media array item at index ${index}`;
+								let url: string | undefined;
+								let mediaType: 'image' | 'video';
+
+								const decideTypeFromUrl = (candidateUrl: string): 'image' | 'video' => {
+									const lower = candidateUrl.toLowerCase();
+									const videoExtPattern = /\.(mp4|mov|m4v|webm)$/;
+									if (videoExtPattern.test(lower)) return 'video';
+									return 'image';
+								};
+
+								if (typeof entry === 'string') {
+									url = entry;
+									if (!url) {
+										throw new NodeOperationError(
+											this.getNode(),
+											`Empty URL in ${label}. URLs must be non-empty strings.`,
+											{ itemIndex },
+										);
+									}
+
+									if (mediaTypeMode === 'image' || mediaTypeMode === 'video') {
+										mediaType = mediaTypeMode;
+									} else {
+										mediaType = decideTypeFromUrl(url);
+									}
+								} else if (entry && typeof entry === 'object') {
+									const obj = entry as IDataObject;
+									const candidateUrl =
+										(obj.url ??
+											obj.src ??
+											obj.imageUrl ??
+											obj.videoUrl) as string | undefined;
+
+									if (!candidateUrl || typeof candidateUrl !== 'string') {
+										throw new NodeOperationError(
+											this.getNode(),
+											`Missing or invalid URL in ${label}. Expected a property like "url", "src", "imageUrl", or "videoUrl".`,
+											{ itemIndex },
+										);
+									}
+
+									url = candidateUrl;
+
+									const explicitType = String(
+										(obj.mediaType ?? obj.type ?? ''),
+									).toLowerCase();
+									const isExplicitVideo = explicitType === 'video';
+									const isExplicitImage = explicitType === 'image';
+
+									if (mediaTypeMode === 'image' || mediaTypeMode === 'video') {
+										mediaType = mediaTypeMode;
+									} else if (isExplicitVideo || isExplicitImage) {
+										mediaType = isExplicitVideo ? 'video' : 'image';
+									} else {
+										mediaType = decideTypeFromUrl(url);
+									}
+								} else {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Unsupported entry in ${label}. Each item must be either a string URL or an object containing a URL.`,
+										{ itemIndex },
+									);
+								}
+
+								if (mediaType === 'video') {
+									return {
+										mediaType: 'video',
+										videoUrl: url,
+									};
+								}
+
+								return {
+									mediaType: 'image',
+									imageUrl: url,
+								};
+							};
+
+							const mediaItemArray = rawArray.map((entry, index) =>
+								toMediaItem(entry, index),
 							);
+
+							carouselMedia = {
+								mediaItem: mediaItemArray,
+							};
+						} else {
+							try {
+								carouselMedia = this.getNodeParameter(
+									'carouselMedia',
+									itemIndex,
+									{ mediaItem: [] },
+								) as {
+									mediaItem?: Array<{
+										mediaType: string;
+										imageUrl?: string;
+										videoUrl?: string;
+									}>;
+								};
+								if (!carouselMedia || typeof carouselMedia !== 'object') {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid carousel media parameter at item index ${itemIndex}. Carousel media must be an object.`,
+										{ itemIndex },
+									);
+								}
+							} catch (error) {
+								if (error instanceof NodeOperationError) {
+									throw error;
+								}
+								throw new NodeOperationError(
+									this.getNode(),
+									`Failed to get carousel media parameter at item index ${itemIndex}: ${
+										error instanceof Error ? error.message : String(error)
+									}`,
+									{ itemIndex },
+								);
+							}
 						}
 
 						const mediaItems = carouselMedia?.mediaItem ?? [];

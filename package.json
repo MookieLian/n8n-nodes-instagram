@@ -1,6 +1,6 @@
 {
   "name": "@mookielianhd/n8n-nodes-instagram",
-  "version": "3.1.4",
+  "version": "3.2.0",
   "description": "Instagram node for n8n",
   "license": "MIT",
   "homepage": "",
@@ -19,7 +19,7 @@
     "build": "node scripts/run-tsc.js",
     "build:watch": "node scripts/run-tsc.js --watch",
     "dev": "n8n-node dev",
-    "lint": "node scripts/run-eslint.js",
+    "lint": "npx n8n-node lint",
     "lint:fix": "node scripts/run-eslint.js --fix",
     "release": "n8n-node release",
     "prepublishOnly": "n8n-node prerelease"
@@ -41,15 +41,15 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@n8n/node-cli": "^0.20.0",
+    "@n8n/node-cli": "^0.21.0",
     "@types/estree": "^1.0.8",
     "@types/json-schema": "^7.0.15",
     "eslint": "^10.0.1",
     "globals": "^17.3.0",
     "prettier": "3.6.2",
     "release-it": "^19.0.4",
-    "typescript": "5.9.2",
-    "typescript-eslint": "^8.56.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "^8.56.1",
     "@types/node": "^22.0.0",
     "n8n-workflow": ">=2.6.1"
   },
