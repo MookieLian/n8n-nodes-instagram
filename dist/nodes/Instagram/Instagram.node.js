@@ -589,6 +589,76 @@ class Instagram {
                     },
                 },
                 {
+                    displayName: 'Carousel Input Mode',
+                    name: 'carouselInputMode',
+                    type: 'options',
+                    options: [
+                        {
+                            name: 'Manual Media Items',
+                            value: 'manual',
+                            description: 'Manually configure each carousel media item in this node',
+                        },
+                        {
+                            name: 'Use Field From Input',
+                            value: 'fromField',
+                            description: 'Read an array of media URLs from a field on the incoming item and build the carousel from it',
+                        },
+                    ],
+                    default: 'manual',
+                    description: 'Whether to configure carousel media directly in this node or read them from an incoming field',
+                    displayOptions: {
+                        show: {
+                            resource: ['carousel'],
+                            operation: ['publish'],
+                        },
+                    },
+                },
+                {
+                    displayName: 'Media Array Field Name',
+                    name: 'carouselMediaArrayField',
+                    type: 'string',
+                    default: '',
+                    description: 'Name of the field on the incoming item that contains an array of media URLs or objects (for example, "mediaUrls" or "data.carousel")',
+                    displayOptions: {
+                        show: {
+                            resource: ['carousel'],
+                            operation: ['publish'],
+                            carouselInputMode: ['fromField'],
+                        },
+                    },
+                },
+                {
+                    displayName: 'Media Type for Array URLs',
+                    name: 'carouselMediaArrayType',
+                    type: 'options',
+                    default: 'auto',
+                    description: 'How to determine whether each URL in the array is treated as an image or a video',
+                    options: [
+                        {
+                            name: 'Auto-Detect From URL',
+                            value: 'auto',
+                            description: 'Try to infer the media type from the URL or file extension; defaults to image when uncertain',
+                        },
+                        {
+                            name: 'Image',
+                            value: 'image',
+                            description: 'Treat all URLs in the array as images',
+                        },
+                        {
+                            name: 'Video',
+                            value: 'video',
+                            description: 'Treat all URLs in the array as videos',
+                        },
+                    ],
+                    displayOptions: {
+                        show: {
+                            resource: ['carousel'],
+                            operation: ['publish'],
+                            carouselInputMode: ['fromField'],
+                        },
+                    },
+                },
+                {
                     displayName: 'Carousel Media',
                     name: 'carouselMedia',
                     type: 'fixedCollection',
@@ -604,6 +674,7 @@ class Instagram {
                         show: {
                             resource: ['carousel'],
                             operation: ['publish'],
+                            carouselInputMode: ['manual'],
                         },
                     },
                     options: [
@@ -799,7 +870,7 @@ class Instagram {
         };
     }
     async execute() {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11;
         const items = this.getInputData();
         const returnItems = [];
         const hostUrl = 'graph.facebook.com';
@@ -1257,19 +1328,109 @@ class Instagram {
                             }
                             throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get caption parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
                         }
-                        try {
-                            carouselMedia = this.getNodeParameter('carouselMedia', itemIndex, { mediaItem: [] });
-                            if (!carouselMedia || typeof carouselMedia !== 'object') {
-                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid carousel media parameter at item index ${itemIndex}. Carousel media must be an object.`, { itemIndex });
+                        const carouselInputMode = this.getNodeParameter('carouselInputMode', itemIndex, 'manual');
+                        const resolveFieldPath = (source, path) => {
+                            if (!path)
+                                return undefined;
+                            const parts = path.split('.');
+                            let current = source;
+                            for (const part of parts) {
+                                if (current == null || typeof current !== 'object') {
+                                    return undefined;
+                                }
+                                current = current[part];
+                            }
+                            return current;
+                        };
+                        if (carouselInputMode === 'fromField') {
+                            const fieldName = this.getNodeParameter('carouselMediaArrayField', itemIndex);
+                            if (!fieldName || typeof fieldName !== 'string') {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid carousel media array field name at item index ${itemIndex}. Field name must be a non-empty string.`, { itemIndex });
+                            }
+                            const mediaTypeMode = this.getNodeParameter('carouselMediaArrayType', itemIndex, 'auto');
+                            const itemJson = (_g = items[itemIndex]) === null || _g === void 0 ? void 0 : _g.json;
+                            const rawArray = resolveFieldPath(itemJson, fieldName);
+                            if (!Array.isArray(rawArray)) {
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid carousel media array at item index ${itemIndex}. The field "${fieldName}" must contain an array.`, { itemIndex });
+                            }
+                            const toMediaItem = (entry, index) => {
+                                var _a, _b, _c, _d, _e;
+                                const label = `carousel media array item at index ${index}`;
+                                let url;
+                                let mediaType;
+                                const decideTypeFromUrl = (candidateUrl) => {
+                                    const lower = candidateUrl.toLowerCase();
+                                    const videoExtPattern = /\.(mp4|mov|m4v|webm)$/;
+                                    if (videoExtPattern.test(lower))
+                                        return 'video';
+                                    return 'image';
+                                };
+                                if (typeof entry === 'string') {
+                                    url = entry;
+                                    if (!url) {
+                                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Empty URL in ${label}. URLs must be non-empty strings.`, { itemIndex });
+                                    }
+                                    if (mediaTypeMode === 'image' || mediaTypeMode === 'video') {
+                                        mediaType = mediaTypeMode;
+                                    }
+                                    else {
+                                        mediaType = decideTypeFromUrl(url);
+                                    }
+                                }
+                                else if (entry && typeof entry === 'object') {
+                                    const obj = entry;
+                                    const candidateUrl = ((_c = (_b = (_a = obj.url) !== null && _a !== void 0 ? _a : obj.src) !== null && _b !== void 0 ? _b : obj.imageUrl) !== null && _c !== void 0 ? _c : obj.videoUrl);
+                                    if (!candidateUrl || typeof candidateUrl !== 'string') {
+                                        throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Missing or invalid URL in ${label}. Expected a property like "url", "src", "imageUrl", or "videoUrl".`, { itemIndex });
+                                    }
+                                    url = candidateUrl;
+                                    const explicitType = String(((_e = (_d = obj.mediaType) !== null && _d !== void 0 ? _d : obj.type) !== null && _e !== void 0 ? _e : '')).toLowerCase();
+                                    const isExplicitVideo = explicitType === 'video';
+                                    const isExplicitImage = explicitType === 'image';
+                                    if (mediaTypeMode === 'image' || mediaTypeMode === 'video') {
+                                        mediaType = mediaTypeMode;
+                                    }
+                                    else if (isExplicitVideo || isExplicitImage) {
+                                        mediaType = isExplicitVideo ? 'video' : 'image';
+                                    }
+                                    else {
+                                        mediaType = decideTypeFromUrl(url);
+                                    }
+                                }
+                                else {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Unsupported entry in ${label}. Each item must be either a string URL or an object containing a URL.`, { itemIndex });
+                                }
+                                if (mediaType === 'video') {
+                                    return {
+                                        mediaType: 'video',
+                                        videoUrl: url,
+                                    };
+                                }
+                                return {
+                                    mediaType: 'image',
+                                    imageUrl: url,
+                                };
+                            };
+                            const mediaItemArray = rawArray.map((entry, index) => toMediaItem(entry, index));
+                            carouselMedia = {
+                                mediaItem: mediaItemArray,
+                            };
+                        }
+                        else {
+                            try {
+                                carouselMedia = this.getNodeParameter('carouselMedia', itemIndex, { mediaItem: [] });
+                                if (!carouselMedia || typeof carouselMedia !== 'object') {
+                                    throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid carousel media parameter at item index ${itemIndex}. Carousel media must be an object.`, { itemIndex });
+                                }
+                            }
+                            catch (error) {
+                                if (error instanceof n8n_workflow_1.NodeOperationError) {
+                                    throw error;
+                                }
+                                throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get carousel media parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
                             }
                         }
-                        catch (error) {
-                            if (error instanceof n8n_workflow_1.NodeOperationError) {
-                                throw error;
-                            }
-                            throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get carousel media parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
-                        }
-                        const mediaItems = (_g = carouselMedia === null || carouselMedia === void 0 ? void 0 : carouselMedia.mediaItem) !== null && _g !== void 0 ? _g : [];
+                        const mediaItems = (_h = carouselMedia === null || carouselMedia === void 0 ? void 0 : carouselMedia.mediaItem) !== null && _h !== void 0 ? _h : [];
                         if (!Array.isArray(mediaItems)) {
                             throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid carousel media items format at item index ${itemIndex}. Media items must be an array.`, { itemIndex });
                         }
@@ -1293,7 +1454,7 @@ class Instagram {
                             if (item.mediaType !== 'image' && item.mediaType !== 'video') {
                                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${mediaLabel}: Invalid media type '${item.mediaType}'. Media type must be either 'image' or 'video'.`, { itemIndex });
                             }
-                            const url = isVideo ? ((_h = item.videoUrl) !== null && _h !== void 0 ? _h : '').trim() : ((_j = item.imageUrl) !== null && _j !== void 0 ? _j : '').trim();
+                            const url = isVideo ? ((_j = item.videoUrl) !== null && _j !== void 0 ? _j : '').trim() : ((_k = item.imageUrl) !== null && _k !== void 0 ? _k : '').trim();
                             if (!url || typeof url !== 'string') {
                                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${mediaLabel}: ${isVideo ? 'Video URL' : 'Image URL'} is required and must be a non-empty string.`, { itemIndex });
                             }
@@ -1395,11 +1556,11 @@ class Instagram {
                         const errorItem = errorWithGraph.response !== undefined
                             ? {
                                 statusCode: errorWithGraph.statusCode,
-                                ...((_l = (_k = errorWithGraph.response.body) === null || _k === void 0 ? void 0 : _k.error) !== null && _l !== void 0 ? _l : {}),
+                                ...((_m = (_l = errorWithGraph.response.body) === null || _l === void 0 ? void 0 : _l.error) !== null && _m !== void 0 ? _m : {}),
                                 headers: errorWithGraph.response.headers,
                             }
                             : error;
-                        const contextMessage = error instanceof Error ? error.message : String((_m = error.message) !== null && _m !== void 0 ? _m : error);
+                        const contextMessage = error instanceof Error ? error.message : String((_o = error.message) !== null && _o !== void 0 ? _o : error);
                         returnItems.push({
                             json: { ...errorItem, carouselErrorContext: contextMessage },
                             pairedItem: { item: itemIndex },
@@ -1569,13 +1730,13 @@ class Instagram {
                                     }
                                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to fetch ${edge} for hashtag ${hashtagId} at page ${pageNumber}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
                                 }
-                                const pageData = (_o = response.data) !== null && _o !== void 0 ? _o : [];
+                                const pageData = (_p = response.data) !== null && _p !== void 0 ? _p : [];
                                 if (!Array.isArray(pageData)) {
                                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid data format in response from ${edge} API at page ${pageNumber}. Expected array, got: ${typeof pageData}. Response: ${JSON.stringify(response)}`, { itemIndex });
                                 }
                                 accumulated.push(...pageData);
                                 const paging = response.paging;
-                                after = (_p = paging === null || paging === void 0 ? void 0 : paging.cursors) === null || _p === void 0 ? void 0 : _p.after;
+                                after = (_q = paging === null || paging === void 0 ? void 0 : paging.cursors) === null || _q === void 0 ? void 0 : _q.after;
                                 if ((!returnAll && accumulated.length >= hardCap) || !after) {
                                     hasMore = false;
                                 }
@@ -1593,7 +1754,7 @@ class Instagram {
                         let errorItem;
                         const errorWithGraph = error;
                         if (errorWithGraph.response !== undefined) {
-                            const graphApiErrors = (_r = (_q = errorWithGraph.response.body) === null || _q === void 0 ? void 0 : _q.error) !== null && _r !== void 0 ? _r : {};
+                            const graphApiErrors = (_s = (_r = errorWithGraph.response.body) === null || _r === void 0 ? void 0 : _r.error) !== null && _s !== void 0 ? _s : {};
                             errorItem = {
                                 statusCode: errorWithGraph.statusCode,
                                 ...graphApiErrors,
@@ -1673,7 +1834,7 @@ class Instagram {
                         let errorItem;
                         const errorWithGraph = error;
                         if (errorWithGraph.response !== undefined) {
-                            const graphApiErrors = (_t = (_s = errorWithGraph.response.body) === null || _s === void 0 ? void 0 : _s.error) !== null && _t !== void 0 ? _t : {};
+                            const graphApiErrors = (_u = (_t = errorWithGraph.response.body) === null || _t === void 0 ? void 0 : _t.error) !== null && _u !== void 0 ? _u : {};
                             errorItem = {
                                 statusCode: errorWithGraph.statusCode,
                                 ...graphApiErrors,
@@ -1830,13 +1991,13 @@ class Instagram {
                                     }
                                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to fetch media for account ${accountId} at page ${pageNumber}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
                                 }
-                                const pageData = (_u = response.data) !== null && _u !== void 0 ? _u : [];
+                                const pageData = (_v = response.data) !== null && _v !== void 0 ? _v : [];
                                 if (!Array.isArray(pageData)) {
                                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid data format in response from IG User media API at page ${pageNumber}. Expected array, got: ${typeof pageData}. Response: ${JSON.stringify(response)}`, { itemIndex });
                                 }
                                 accumulated.push(...pageData);
                                 const paging = response.paging;
-                                after = (_v = paging === null || paging === void 0 ? void 0 : paging.cursors) === null || _v === void 0 ? void 0 : _v.after;
+                                after = (_w = paging === null || paging === void 0 ? void 0 : paging.cursors) === null || _w === void 0 ? void 0 : _w.after;
                                 if ((!returnAll && accumulated.length >= hardCap) || !after) {
                                     hasMore = false;
                                 }
@@ -1854,7 +2015,7 @@ class Instagram {
                         let errorItem;
                         const errorWithGraph = error;
                         if (errorWithGraph.response !== undefined) {
-                            const graphApiErrors = (_x = (_w = errorWithGraph.response.body) === null || _w === void 0 ? void 0 : _w.error) !== null && _x !== void 0 ? _x : {};
+                            const graphApiErrors = (_y = (_x = errorWithGraph.response.body) === null || _x === void 0 ? void 0 : _x.error) !== null && _y !== void 0 ? _y : {};
                             errorItem = {
                                 statusCode: errorWithGraph.statusCode,
                                 ...graphApiErrors,
@@ -2130,7 +2291,7 @@ class Instagram {
                         let errorItem;
                         const errorWithGraph = error;
                         if (errorWithGraph.response !== undefined) {
-                            const graphApiErrors = (_z = (_y = errorWithGraph.response.body) === null || _y === void 0 ? void 0 : _y.error) !== null && _z !== void 0 ? _z : {};
+                            const graphApiErrors = (_0 = (_z = errorWithGraph.response.body) === null || _z === void 0 ? void 0 : _z.error) !== null && _0 !== void 0 ? _0 : {};
                             errorItem = {
                                 statusCode: errorWithGraph.statusCode,
                                 ...graphApiErrors,
@@ -2205,7 +2366,7 @@ class Instagram {
                     }
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get additional fields parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
                 }
-                const altText = (_0 = additionalFields.altText) !== null && _0 !== void 0 ? _0 : '';
+                const altText = (_1 = additionalFields.altText) !== null && _1 !== void 0 ? _1 : '';
                 const rawLocationId = additionalFields.locationId;
                 const userTagsCollection = additionalFields.userTags;
                 const productTagsCollection = additionalFields.productTags;
@@ -2324,7 +2485,7 @@ class Instagram {
                     let errorCode;
                     let errorType;
                     const err = error;
-                    if ((_2 = (_1 = err.response) === null || _1 === void 0 ? void 0 : _1.body) === null || _2 === void 0 ? void 0 : _2.error) {
+                    if ((_3 = (_2 = err.response) === null || _2 === void 0 ? void 0 : _2.body) === null || _3 === void 0 ? void 0 : _3.error) {
                         const graphError = err.response.body.error;
                         errorMessage = graphError.message || errorMessage;
                         errorCode = graphError.code;
@@ -2350,7 +2511,7 @@ class Instagram {
                         throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to create media container: The ${videoUrl ? 'video' : 'image'} URL appears to be invalid or unreachable. Error: ${errorMessage}${errorCode ? ` (Code: ${errorCode})` : ''}. Please verify that the URL is accessible and points to a valid ${videoUrl ? 'video' : 'image'} file. URL: ${urlToCheck.substring(0, 100)}${urlToCheck.length > 100 ? '...' : ''}`, { itemIndex });
                     }
                     if (!this.continueOnFail()) {
-                        const errorObj = (_4 = (_3 = err.response) === null || _3 === void 0 ? void 0 : _3.body) === null || _4 === void 0 ? void 0 : _4.error;
+                        const errorObj = (_5 = (_4 = err.response) === null || _4 === void 0 ? void 0 : _4.body) === null || _5 === void 0 ? void 0 : _5.error;
                         const detailedError = {
                             message: errorMessage,
                             ...(errorCode && { code: errorCode }),
@@ -2373,7 +2534,7 @@ class Instagram {
                     }
                     let errorItem;
                     if (err.response !== undefined) {
-                        const graphApiErrors = (_6 = (_5 = err.response.body) === null || _5 === void 0 ? void 0 : _5.error) !== null && _6 !== void 0 ? _6 : {};
+                        const graphApiErrors = (_7 = (_6 = err.response.body) === null || _6 === void 0 ? void 0 : _6.error) !== null && _7 !== void 0 ? _7 : {};
                         errorItem = {
                             statusCode: err.statusCode,
                             ...graphApiErrors,
@@ -2484,7 +2645,7 @@ class Instagram {
                         let errorItem;
                         const err = error;
                         if (err.response !== undefined) {
-                            const graphApiErrors = (_8 = (_7 = err.response.body) === null || _7 === void 0 ? void 0 : _7.error) !== null && _8 !== void 0 ? _8 : {};
+                            const graphApiErrors = (_9 = (_8 = err.response.body) === null || _8 === void 0 ? void 0 : _8.error) !== null && _9 !== void 0 ? _9 : {};
                             errorItem = {
                                 statusCode: err.statusCode,
                                 ...graphApiErrors,
@@ -2530,7 +2691,7 @@ class Instagram {
                 let errorItem;
                 const errorWithGraph = error;
                 if (errorWithGraph.response !== undefined) {
-                    const graphApiErrors = (_10 = (_9 = errorWithGraph.response.body) === null || _9 === void 0 ? void 0 : _9.error) !== null && _10 !== void 0 ? _10 : {};
+                    const graphApiErrors = (_11 = (_10 = errorWithGraph.response.body) === null || _10 === void 0 ? void 0 : _10.error) !== null && _11 !== void 0 ? _11 : {};
                     errorItem = {
                         statusCode: errorWithGraph.statusCode,
                         ...graphApiErrors,
