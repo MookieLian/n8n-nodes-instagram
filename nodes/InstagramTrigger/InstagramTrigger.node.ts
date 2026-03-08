@@ -34,7 +34,7 @@ export class InstagramTrigger implements INodeType {
 		version: 2,
 		usableAsTool: true,
 		description:
-			"Instagram trigger for n8n that lets you react to real-time events (comments, messages, mentions, story insights, etc.) from Instagram Business and Creator accounts via the Facebook/Instagram Graph API, so you can connect incoming activity to the same automated workflows that manage publishing, moderation, messaging and analytics.",
+			"Instagram trigger to receive real-time webhook events from Meta and start a workflow when an event is received.",
 		defaults: {
 			name: 'Instagram Trigger',
 		},
