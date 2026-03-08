@@ -18,6 +18,8 @@
     "scripts": {
         "build": "node scripts/run-tsc.js",
         "build:watch": "node scripts/run-tsc.js --watch",
+        "build": "node scripts/run-tsc.js",
+        "build:watch": "node scripts/run-tsc.js --watch",
         "dev": "n8n-node dev",
         "lint": "npx n8n-node lint",
         "lint:fix": "node scripts/run-eslint.js --fix",
@@ -33,8 +35,12 @@
         "nodes": [
             "dist/nodes/Instagram/Instagram.node.js",
             "dist/nodes/InstagramTrigger/InstagramTrigger.node.js"
+            "dist/nodes/Instagram/Instagram.node.js",
+            "dist/nodes/InstagramTrigger/InstagramTrigger.node.js"
         ],
         "credentials": [
+            "dist/credentials/InstagramApi.credentials.js",
+            "dist/credentials/InstagramWebhookApi.credentials.js"
             "dist/credentials/InstagramApi.credentials.js",
             "dist/credentials/InstagramWebhookApi.credentials.js"
         ]
@@ -44,6 +50,7 @@
         "@n8n/node-cli": "^0.21.0",
         "@types/estree": "^1.0.8",
         "@types/json-schema": "^7.0.15",
+        "eslint": "^10.0.1",
         "eslint": "^10.0.1",
         "globals": "^17.3.0",
         "prettier": "3.6.2",
