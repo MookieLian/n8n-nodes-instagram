@@ -760,6 +760,30 @@ export class Instagram implements INodeType {
 						description: 'Alternative text for image posts (for accessibility). Image only; not supported for Reels or Stories.',
 					},
 					{
+						displayName: 'Audio Name',
+						name: 'audioName',
+						type: 'string',
+						default: '',
+						description:
+							'Custom name for the original audio associated with this reel. Applies only to Reels.',
+					},
+					{
+						displayName: 'Collaborators',
+						name: 'collaborators',
+						type: 'string',
+						default: '',
+						description:
+							'Comma-separated Instagram usernames to invite as collaborators on this reel (without @). Applies only to Reels.',
+					},
+					{
+						displayName: 'Cover URL',
+						name: 'coverUrl',
+						type: 'string',
+						default: '',
+						description:
+							'URL of an image to use as the custom cover for the reel. Applies only to Reels.',
+					},
+					{
 						displayName: 'Location ID',
 						name: 'locationId',
 						type: 'string',
@@ -820,6 +844,25 @@ export class Instagram implements INodeType {
 								],
 							},
 						],
+					},
+					{
+						displayName: 'Share to Feed',
+						name: 'shareToFeed',
+						type: 'boolean',
+						default: true,
+						description:
+							'Whether to share the reel to the Instagram feed as well as the Reels tab. Applies only to Reels.',
+					},
+					{
+						displayName: 'Thumbnail Offset (Seconds)',
+						name: 'thumbOffset',
+						type: 'number',
+						typeOptions: {
+							minValue: 0,
+						},
+						default: 0,
+						description:
+							'Time in seconds from the start of the video to use for the reel thumbnail. Applies only to Reels.',
 					},
 					{
 						displayName: 'Trial Reel - Graduation Strategy',
@@ -3448,6 +3491,36 @@ export class Instagram implements INodeType {
 						});
 					if (productTags.length > 0) {
 						mediaQs.product_tags = JSON.stringify(productTags);
+					}
+				}
+
+				if (resource === 'reels') {
+					const shareToFeed = additionalFields.shareToFeed as boolean | undefined;
+					if (shareToFeed !== undefined) {
+						mediaQs.share_to_feed = shareToFeed;
+					}
+
+					const collaboratorsRaw = additionalFields.collaborators as string | undefined;
+					const collaborators = collaboratorsRaw?.trim();
+					if (collaborators) {
+						mediaQs.collaborators = collaborators;
+					}
+
+					const coverUrlRaw = additionalFields.coverUrl as string | undefined;
+					const coverUrl = coverUrlRaw?.trim();
+					if (coverUrl) {
+						mediaQs.cover_url = coverUrl;
+					}
+
+					const audioNameRaw = additionalFields.audioName as string | undefined;
+					const audioName = audioNameRaw?.trim();
+					if (audioName) {
+						mediaQs.audio_name = audioName;
+					}
+
+					const thumbOffset = additionalFields.thumbOffset as number | undefined;
+					if (thumbOffset !== undefined) {
+						mediaQs.thumb_offset = thumbOffset;
 					}
 				}
 
