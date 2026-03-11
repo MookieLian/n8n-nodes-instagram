@@ -11,6 +11,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Increase job timeout (minutes). Repo/org settings may cap this — check Settings → Actions → General → Workflow timeout.
+    timeout-minutes: 720
 
     steps:
       - uses: actions/checkout@v4
@@ -20,12 +22,27 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install dependencies and lint
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: Install dependencies
         run: |
-          npm i
+          # Use a single deterministic install; npm ci is preferred when package-lock.json exists
           npm ci --legacy-peer-deps
+          # Install n8n-workflow without saving to package.json (only if you cannot add it to package.json)
           npm install --no-package-lock --no-save --legacy-peer-deps n8n-workflow@">=2.6.1"
-          npx n8n-node lint
-    
-      - name: Run build
-        run: 'npm run build'
+
+      - name: Lint (bounded)
+        # Use timeout to prevent infinite hang; adjust seconds as needed
+        run: |
+          timeout 1800s npx n8n-node lint
+
+      - name: Run build (bounded)
+        run: |
+          # optional: increase verbosity in your build script or add periodic echo so logs show progress
+          timeout 5400s npm run build
