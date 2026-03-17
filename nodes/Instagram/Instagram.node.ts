@@ -1284,7 +1284,21 @@ export class Instagram implements INodeType {
 								);
 							}
 
-							const url = `https://${hostUrl}/${graphApiVersion}/${accountId}/messages`;
+							const credentials = (await this.getCredentials('instagramApi')) as {
+								accessToken?: string;
+								authMode?: string;
+							};
+
+							const accessToken = credentials?.accessToken ?? '';
+							const authMode = credentials?.authMode ?? 'auto';
+							const isIgPrefixed = accessToken.startsWith('IG');
+							const mode =
+								authMode === 'auto' ? (isIgPrefixed ? 'instagram' : 'graph') : authMode;
+
+							const url =
+								mode === 'instagram'
+									? `https://graph.instagram.com/${graphApiVersion}/me/messages`
+									: `https://${hostUrl}/${graphApiVersion}/${accountId}/messages`;
 
 							const requestOptions: IHttpRequestOptions = {
 								headers: {
@@ -3170,7 +3184,21 @@ export class Instagram implements INodeType {
 								);
 							}
 
-							const url = `https://${hostUrl}/${graphApiVersion}/${accountId}/messages`;
+							const credentials = (await this.getCredentials('instagramApi')) as {
+								accessToken?: string;
+								authMode?: string;
+							};
+
+							const accessToken = credentials?.accessToken ?? '';
+							const authMode = credentials?.authMode ?? 'auto';
+							const isIgPrefixed = accessToken.startsWith('IG');
+							const mode =
+								authMode === 'auto' ? (isIgPrefixed ? 'instagram' : 'graph') : authMode;
+
+							const url =
+								mode === 'instagram'
+									? `https://graph.instagram.com/${graphApiVersion}/me/messages`
+									: `https://${hostUrl}/${graphApiVersion}/${accountId}/messages`;
 
 							const requestOptions: IHttpRequestOptions = {
 								headers: {

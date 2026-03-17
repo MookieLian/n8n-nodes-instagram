@@ -908,7 +908,7 @@ class Instagram {
         };
     }
     async execute() {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y, _z, _0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, _14, _15;
         const items = this.getInputData();
         const returnItems = [];
         const hostUrl = 'graph.facebook.com';
@@ -1106,7 +1106,14 @@ class Instagram {
                                 }
                                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get message text parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
                             }
-                            const url = `https://${hostUrl}/${graphApiVersion}/${accountId}/messages`;
+                            const credentials = (await this.getCredentials('instagramApi'));
+                            const accessToken = (_a = credentials === null || credentials === void 0 ? void 0 : credentials.accessToken) !== null && _a !== void 0 ? _a : '';
+                            const authMode = (_b = credentials === null || credentials === void 0 ? void 0 : credentials.authMode) !== null && _b !== void 0 ? _b : 'auto';
+                            const isIgPrefixed = accessToken.startsWith('IG');
+                            const mode = authMode === 'auto' ? (isIgPrefixed ? 'instagram' : 'graph') : authMode;
+                            const url = mode === 'instagram'
+                                ? `https://graph.instagram.com/${graphApiVersion}/me/messages`
+                                : `https://${hostUrl}/${graphApiVersion}/${accountId}/messages`;
                             const requestOptions = {
                                 headers: {
                                     accept: 'application/json,text/*;q=0.99',
@@ -1149,7 +1156,7 @@ class Instagram {
                         let errorItem;
                         const errorWithGraph = error;
                         if (errorWithGraph.response !== undefined) {
-                            const graphApiErrors = (_b = (_a = errorWithGraph.response.body) === null || _a === void 0 ? void 0 : _a.error) !== null && _b !== void 0 ? _b : {};
+                            const graphApiErrors = (_d = (_c = errorWithGraph.response.body) === null || _c === void 0 ? void 0 : _c.error) !== null && _d !== void 0 ? _d : {};
                             errorItem = {
                                 statusCode: errorWithGraph.statusCode,
                                 ...graphApiErrors,
@@ -1166,7 +1173,7 @@ class Instagram {
                 if (resource === 'auth') {
                     try {
                         if (operation === 'refreshAccessToken') {
-                            let token = (_c = this.getNodeParameter('accessToken', itemIndex, '')) !== null && _c !== void 0 ? _c : '';
+                            let token = (_e = this.getNodeParameter('accessToken', itemIndex, '')) !== null && _e !== void 0 ? _e : '';
                             if (!token) {
                                 let credentials;
                                 try {
@@ -1178,7 +1185,7 @@ class Instagram {
                                 if (!credentials) {
                                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'Instagram API credentials not found. Please configure the Instagram API credential.', { itemIndex });
                                 }
-                                token = (_d = credentials === null || credentials === void 0 ? void 0 : credentials.accessToken) !== null && _d !== void 0 ? _d : '';
+                                token = (_f = credentials === null || credentials === void 0 ? void 0 : credentials.accessToken) !== null && _f !== void 0 ? _f : '';
                             }
                             if (!token || typeof token !== 'string') {
                                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), 'No access token provided and no access token found in the Instagram API credential. Please provide an access token or configure it in the credential.', { itemIndex });
@@ -1304,7 +1311,7 @@ class Instagram {
                         let errorItem;
                         const errorWithGraph = error;
                         if (errorWithGraph.response !== undefined) {
-                            const graphApiErrors = (_f = (_e = errorWithGraph.response.body) === null || _e === void 0 ? void 0 : _e.error) !== null && _f !== void 0 ? _f : {};
+                            const graphApiErrors = (_h = (_g = errorWithGraph.response.body) === null || _g === void 0 ? void 0 : _g.error) !== null && _h !== void 0 ? _h : {};
                             errorItem = {
                                 statusCode: errorWithGraph.statusCode,
                                 ...graphApiErrors,
@@ -1386,7 +1393,7 @@ class Instagram {
                                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid carousel media array field name at item index ${itemIndex}. Field name must be a non-empty string.`, { itemIndex });
                             }
                             const mediaTypeMode = this.getNodeParameter('carouselMediaArrayType', itemIndex, 'auto');
-                            const itemJson = (_g = items[itemIndex]) === null || _g === void 0 ? void 0 : _g.json;
+                            const itemJson = (_j = items[itemIndex]) === null || _j === void 0 ? void 0 : _j.json;
                             const rawArray = resolveFieldPath(itemJson, fieldName);
                             if (!Array.isArray(rawArray)) {
                                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid carousel media array at item index ${itemIndex}. The field "${fieldName}" must contain an array.`, { itemIndex });
@@ -1468,7 +1475,7 @@ class Instagram {
                                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get carousel media parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
                             }
                         }
-                        const mediaItems = (_h = carouselMedia === null || carouselMedia === void 0 ? void 0 : carouselMedia.mediaItem) !== null && _h !== void 0 ? _h : [];
+                        const mediaItems = (_k = carouselMedia === null || carouselMedia === void 0 ? void 0 : carouselMedia.mediaItem) !== null && _k !== void 0 ? _k : [];
                         if (!Array.isArray(mediaItems)) {
                             throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid carousel media items format at item index ${itemIndex}. Media items must be an array.`, { itemIndex });
                         }
@@ -1492,7 +1499,7 @@ class Instagram {
                             if (item.mediaType !== 'image' && item.mediaType !== 'video') {
                                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${mediaLabel}: Invalid media type '${item.mediaType}'. Media type must be either 'image' or 'video'.`, { itemIndex });
                             }
-                            const url = isVideo ? ((_j = item.videoUrl) !== null && _j !== void 0 ? _j : '').trim() : ((_k = item.imageUrl) !== null && _k !== void 0 ? _k : '').trim();
+                            const url = isVideo ? ((_l = item.videoUrl) !== null && _l !== void 0 ? _l : '').trim() : ((_m = item.imageUrl) !== null && _m !== void 0 ? _m : '').trim();
                             if (!url || typeof url !== 'string') {
                                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `${mediaLabel}: ${isVideo ? 'Video URL' : 'Image URL'} is required and must be a non-empty string.`, { itemIndex });
                             }
@@ -1594,11 +1601,11 @@ class Instagram {
                         const errorItem = errorWithGraph.response !== undefined
                             ? {
                                 statusCode: errorWithGraph.statusCode,
-                                ...((_m = (_l = errorWithGraph.response.body) === null || _l === void 0 ? void 0 : _l.error) !== null && _m !== void 0 ? _m : {}),
+                                ...((_p = (_o = errorWithGraph.response.body) === null || _o === void 0 ? void 0 : _o.error) !== null && _p !== void 0 ? _p : {}),
                                 headers: errorWithGraph.response.headers,
                             }
                             : error;
-                        const contextMessage = error instanceof Error ? error.message : String((_o = error.message) !== null && _o !== void 0 ? _o : error);
+                        const contextMessage = error instanceof Error ? error.message : String((_q = error.message) !== null && _q !== void 0 ? _q : error);
                         returnItems.push({
                             json: { ...errorItem, carouselErrorContext: contextMessage },
                             pairedItem: { item: itemIndex },
@@ -1768,13 +1775,13 @@ class Instagram {
                                     }
                                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to fetch ${edge} for hashtag ${hashtagId} at page ${pageNumber}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
                                 }
-                                const pageData = (_p = response.data) !== null && _p !== void 0 ? _p : [];
+                                const pageData = (_r = response.data) !== null && _r !== void 0 ? _r : [];
                                 if (!Array.isArray(pageData)) {
                                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid data format in response from ${edge} API at page ${pageNumber}. Expected array, got: ${typeof pageData}. Response: ${JSON.stringify(response)}`, { itemIndex });
                                 }
                                 accumulated.push(...pageData);
                                 const paging = response.paging;
-                                after = (_q = paging === null || paging === void 0 ? void 0 : paging.cursors) === null || _q === void 0 ? void 0 : _q.after;
+                                after = (_s = paging === null || paging === void 0 ? void 0 : paging.cursors) === null || _s === void 0 ? void 0 : _s.after;
                                 if ((!returnAll && accumulated.length >= hardCap) || !after) {
                                     hasMore = false;
                                 }
@@ -1792,7 +1799,7 @@ class Instagram {
                         let errorItem;
                         const errorWithGraph = error;
                         if (errorWithGraph.response !== undefined) {
-                            const graphApiErrors = (_s = (_r = errorWithGraph.response.body) === null || _r === void 0 ? void 0 : _r.error) !== null && _s !== void 0 ? _s : {};
+                            const graphApiErrors = (_u = (_t = errorWithGraph.response.body) === null || _t === void 0 ? void 0 : _t.error) !== null && _u !== void 0 ? _u : {};
                             errorItem = {
                                 statusCode: errorWithGraph.statusCode,
                                 ...graphApiErrors,
@@ -1872,7 +1879,7 @@ class Instagram {
                         let errorItem;
                         const errorWithGraph = error;
                         if (errorWithGraph.response !== undefined) {
-                            const graphApiErrors = (_u = (_t = errorWithGraph.response.body) === null || _t === void 0 ? void 0 : _t.error) !== null && _u !== void 0 ? _u : {};
+                            const graphApiErrors = (_w = (_v = errorWithGraph.response.body) === null || _v === void 0 ? void 0 : _v.error) !== null && _w !== void 0 ? _w : {};
                             errorItem = {
                                 statusCode: errorWithGraph.statusCode,
                                 ...graphApiErrors,
@@ -2029,13 +2036,13 @@ class Instagram {
                                     }
                                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to fetch media for account ${accountId} at page ${pageNumber}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
                                 }
-                                const pageData = (_v = response.data) !== null && _v !== void 0 ? _v : [];
+                                const pageData = (_x = response.data) !== null && _x !== void 0 ? _x : [];
                                 if (!Array.isArray(pageData)) {
                                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Invalid data format in response from IG User media API at page ${pageNumber}. Expected array, got: ${typeof pageData}. Response: ${JSON.stringify(response)}`, { itemIndex });
                                 }
                                 accumulated.push(...pageData);
                                 const paging = response.paging;
-                                after = (_w = paging === null || paging === void 0 ? void 0 : paging.cursors) === null || _w === void 0 ? void 0 : _w.after;
+                                after = (_y = paging === null || paging === void 0 ? void 0 : paging.cursors) === null || _y === void 0 ? void 0 : _y.after;
                                 if ((!returnAll && accumulated.length >= hardCap) || !after) {
                                     hasMore = false;
                                 }
@@ -2053,7 +2060,7 @@ class Instagram {
                         let errorItem;
                         const errorWithGraph = error;
                         if (errorWithGraph.response !== undefined) {
-                            const graphApiErrors = (_y = (_x = errorWithGraph.response.body) === null || _x === void 0 ? void 0 : _x.error) !== null && _y !== void 0 ? _y : {};
+                            const graphApiErrors = (_0 = (_z = errorWithGraph.response.body) === null || _z === void 0 ? void 0 : _z.error) !== null && _0 !== void 0 ? _0 : {};
                             errorItem = {
                                 statusCode: errorWithGraph.statusCode,
                                 ...graphApiErrors,
@@ -2286,7 +2293,14 @@ class Instagram {
                                 }
                                 throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get private reply text parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
                             }
-                            const url = `https://${hostUrl}/${graphApiVersion}/${accountId}/messages`;
+                            const credentials = (await this.getCredentials('instagramApi'));
+                            const accessToken = (_1 = credentials === null || credentials === void 0 ? void 0 : credentials.accessToken) !== null && _1 !== void 0 ? _1 : '';
+                            const authMode = (_2 = credentials === null || credentials === void 0 ? void 0 : credentials.authMode) !== null && _2 !== void 0 ? _2 : 'auto';
+                            const isIgPrefixed = accessToken.startsWith('IG');
+                            const mode = authMode === 'auto' ? (isIgPrefixed ? 'instagram' : 'graph') : authMode;
+                            const url = mode === 'instagram'
+                                ? `https://graph.instagram.com/${graphApiVersion}/me/messages`
+                                : `https://${hostUrl}/${graphApiVersion}/${accountId}/messages`;
                             const requestOptions = {
                                 headers: {
                                     accept: 'application/json,text/*;q=0.99',
@@ -2329,7 +2343,7 @@ class Instagram {
                         let errorItem;
                         const errorWithGraph = error;
                         if (errorWithGraph.response !== undefined) {
-                            const graphApiErrors = (_0 = (_z = errorWithGraph.response.body) === null || _z === void 0 ? void 0 : _z.error) !== null && _0 !== void 0 ? _0 : {};
+                            const graphApiErrors = (_4 = (_3 = errorWithGraph.response.body) === null || _3 === void 0 ? void 0 : _3.error) !== null && _4 !== void 0 ? _4 : {};
                             errorItem = {
                                 statusCode: errorWithGraph.statusCode,
                                 ...graphApiErrors,
@@ -2404,7 +2418,7 @@ class Instagram {
                     }
                     throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to get additional fields parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`, { itemIndex });
                 }
-                const altText = (_1 = additionalFields.altText) !== null && _1 !== void 0 ? _1 : '';
+                const altText = (_5 = additionalFields.altText) !== null && _5 !== void 0 ? _5 : '';
                 const rawLocationId = additionalFields.locationId;
                 const userTagsCollection = additionalFields.userTags;
                 const productTagsCollection = additionalFields.productTags;
@@ -2548,7 +2562,7 @@ class Instagram {
                     let errorCode;
                     let errorType;
                     const err = error;
-                    if ((_3 = (_2 = err.response) === null || _2 === void 0 ? void 0 : _2.body) === null || _3 === void 0 ? void 0 : _3.error) {
+                    if ((_7 = (_6 = err.response) === null || _6 === void 0 ? void 0 : _6.body) === null || _7 === void 0 ? void 0 : _7.error) {
                         const graphError = err.response.body.error;
                         errorMessage = graphError.message || errorMessage;
                         errorCode = graphError.code;
@@ -2574,7 +2588,7 @@ class Instagram {
                         throw new n8n_workflow_1.NodeOperationError(this.getNode(), `Failed to create media container: The ${videoUrl ? 'video' : 'image'} URL appears to be invalid or unreachable. Error: ${errorMessage}${errorCode ? ` (Code: ${errorCode})` : ''}. Please verify that the URL is accessible and points to a valid ${videoUrl ? 'video' : 'image'} file. URL: ${urlToCheck.substring(0, 100)}${urlToCheck.length > 100 ? '...' : ''}`, { itemIndex });
                     }
                     if (!this.continueOnFail()) {
-                        const errorObj = (_5 = (_4 = err.response) === null || _4 === void 0 ? void 0 : _4.body) === null || _5 === void 0 ? void 0 : _5.error;
+                        const errorObj = (_9 = (_8 = err.response) === null || _8 === void 0 ? void 0 : _8.body) === null || _9 === void 0 ? void 0 : _9.error;
                         const detailedError = {
                             message: errorMessage,
                             ...(errorCode && { code: errorCode }),
@@ -2597,7 +2611,7 @@ class Instagram {
                     }
                     let errorItem;
                     if (err.response !== undefined) {
-                        const graphApiErrors = (_7 = (_6 = err.response.body) === null || _6 === void 0 ? void 0 : _6.error) !== null && _7 !== void 0 ? _7 : {};
+                        const graphApiErrors = (_11 = (_10 = err.response.body) === null || _10 === void 0 ? void 0 : _10.error) !== null && _11 !== void 0 ? _11 : {};
                         errorItem = {
                             statusCode: err.statusCode,
                             ...graphApiErrors,
@@ -2708,7 +2722,7 @@ class Instagram {
                         let errorItem;
                         const err = error;
                         if (err.response !== undefined) {
-                            const graphApiErrors = (_9 = (_8 = err.response.body) === null || _8 === void 0 ? void 0 : _8.error) !== null && _9 !== void 0 ? _9 : {};
+                            const graphApiErrors = (_13 = (_12 = err.response.body) === null || _12 === void 0 ? void 0 : _12.error) !== null && _13 !== void 0 ? _13 : {};
                             errorItem = {
                                 statusCode: err.statusCode,
                                 ...graphApiErrors,
@@ -2754,7 +2768,7 @@ class Instagram {
                 let errorItem;
                 const errorWithGraph = error;
                 if (errorWithGraph.response !== undefined) {
-                    const graphApiErrors = (_11 = (_10 = errorWithGraph.response.body) === null || _10 === void 0 ? void 0 : _10.error) !== null && _11 !== void 0 ? _11 : {};
+                    const graphApiErrors = (_15 = (_14 = errorWithGraph.response.body) === null || _14 === void 0 ? void 0 : _14.error) !== null && _15 !== void 0 ? _15 : {};
                     errorItem = {
                         statusCode: errorWithGraph.statusCode,
                         ...graphApiErrors,
