@@ -487,6 +487,25 @@ export class Instagram implements INodeType {
 				},
 			},
 			{
+				displayName: 'Message Type',
+				name: 'messageType',
+				type: 'options',
+				noDataExpression: true,
+				options: [
+					{ name: 'Text', value: 'text', description: 'Send a plain text message' },
+					{ name: 'Image', value: 'image', description: 'Send an image attachment' },
+				],
+				default: 'text',
+				description: 'The type of message to send',
+				required: true,
+				displayOptions: {
+					show: {
+						resource: ['messaging'],
+						operation: ['sendMessage'],
+					},
+				},
+			},
+			{
 				displayName: 'Page ID',
 				name: 'pageId',
 				type: 'string',
@@ -515,6 +534,22 @@ export class Instagram implements INodeType {
 					show: {
 						resource: ['messaging'],
 						operation: ['sendMessage'],
+						messageType: ['text'],
+					},
+				},
+			},
+			{
+				displayName: 'Image URL',
+				name: 'imageUrl',
+				type: 'string',
+				default: '',
+				description: 'Publicly accessible URL of the image to send in the direct message (jpg/png/gif)',
+				required: true,
+				displayOptions: {
+					show: {
+						resource: ['messaging'],
+						operation: ['sendMessage'],
+						messageType: ['image'],
 					},
 				},
 			},
@@ -1200,7 +1235,6 @@ export class Instagram implements INodeType {
 					try {
 						if (operation === 'sendMessage') {
 							let recipientId: string;
-							let text: string;
 							try {
 								recipientId = this.getNodeParameter('recipientId', itemIndex) as string;
 								if (!recipientId || typeof recipientId !== 'string') {
@@ -1211,9 +1245,7 @@ export class Instagram implements INodeType {
 									);
 								}
 							} catch (error) {
-								if (error instanceof NodeOperationError) {
-									throw error;
-								}
+								if (error instanceof NodeOperationError) throw error;
 								throw new NodeOperationError(
 									this.getNode(),
 									`Failed to get recipient ID parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
@@ -1221,24 +1253,68 @@ export class Instagram implements INodeType {
 								);
 							}
 
-							try {
-								text = this.getNodeParameter('messageText', itemIndex) as string;
-								if (!text || typeof text !== 'string') {
+							const messageType = this.getNodeParameter('messageType', itemIndex, 'text') as string;
+							let messageBody: IDataObject;
+
+							if (messageType === 'image') {
+								let imageUrl: string;
+								try {
+									imageUrl = this.getNodeParameter('imageUrl', itemIndex) as string;
+									if (!imageUrl || typeof imageUrl !== 'string') {
+										throw new NodeOperationError(
+											this.getNode(),
+											`Invalid or missing image URL parameter at item index ${itemIndex}. Image URL must be a non-empty string.`,
+											{ itemIndex },
+										);
+									}
+								} catch (error) {
+									if (error instanceof NodeOperationError) throw error;
 									throw new NodeOperationError(
 										this.getNode(),
-										`Invalid or missing message text parameter at item index ${itemIndex}. Message text must be a non-empty string.`,
+										`Failed to get image URL parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
 										{ itemIndex },
 									);
 								}
-							} catch (error) {
-								if (error instanceof NodeOperationError) {
-									throw error;
+
+								const trimmedUrl = imageUrl.trim();
+								const urlPattern = /^https?:\/\/.+/i;
+								if (!trimmedUrl || !urlPattern.test(trimmedUrl)) {
+									throw new NodeOperationError(
+										this.getNode(),
+										`Invalid image URL format at item index ${itemIndex}. URL must be a non-empty HTTP/HTTPS URL. Provided: ${trimmedUrl.substring(0, 100)}`,
+										{ itemIndex },
+									);
 								}
-								throw new NodeOperationError(
-									this.getNode(),
-									`Failed to get message text parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
-									{ itemIndex },
-								);
+
+								messageBody = {
+									attachment: {
+										type: 'image',
+										payload: {
+											url: trimmedUrl,
+										},
+									},
+								};
+							} else {
+								let text: string;
+								try {
+									text = this.getNodeParameter('messageText', itemIndex) as string;
+									if (!text || typeof text !== 'string') {
+										throw new NodeOperationError(
+											this.getNode(),
+											`Invalid or missing message text parameter at item index ${itemIndex}. Message text must be a non-empty string.`,
+											{ itemIndex },
+										);
+									}
+								} catch (error) {
+									if (error instanceof NodeOperationError) throw error;
+									throw new NodeOperationError(
+										this.getNode(),
+										`Failed to get message text parameter at item index ${itemIndex}: ${error instanceof Error ? error.message : String(error)}`,
+										{ itemIndex },
+									);
+								}
+
+								messageBody = { text };
 							}
 
 							const url = `https://${hostUrl}/${graphApiVersion}/${accountId}/messages`;
@@ -1254,9 +1330,7 @@ export class Instagram implements INodeType {
 									recipient: {
 										id: recipientId,
 									},
-									message: {
-										text,
-									},
+									message: messageBody,
 								},
 								json: true,
 							};
@@ -1277,9 +1351,7 @@ export class Instagram implements INodeType {
 									);
 								}
 							} catch (error) {
-								if (error instanceof NodeOperationError) {
-									throw error;
-								}
+								if (error instanceof NodeOperationError) throw error;
 								throw new NodeOperationError(
 									this.getNode(),
 									`Failed to send message via Instagram Messaging API. Account ID: ${accountId}, Recipient ID: ${recipientId}. Error: ${error instanceof Error ? error.message : String(error)}`,
